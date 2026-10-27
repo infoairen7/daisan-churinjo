@@ -1,0 +1,17 @@
+{
+  "name": "daisan-churinjo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "第３駐輪場 / Bicycle Parking No.3 — a first-person puzzle horror game for the browser",
+  "type": "module",
+  "license": "MIT",
+  "scripts": {
+    "build": "node tools/build.mjs",
+    "build:web": "node tools/build.mjs --target web",
+    "build:debug": "node tools/build.mjs --debug",
+    "serve": "node tools/serve.mjs dist 8765"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2"
+  }
+}

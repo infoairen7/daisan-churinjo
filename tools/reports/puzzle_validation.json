@@ -1,0 +1,84 @@
+{
+  "generatedRuns": 40000,
+  "fallbackFloors": 0,
+  "templateUse": {
+    "E01": 10072,
+    "N03": 19947,
+    "H02": 9833,
+    "N04": 20072,
+    "N01": 20023,
+    "E04": 10011,
+    "N02": 19958,
+    "E03": 9939,
+    "H01": 9920,
+    "H03": 10014,
+    "E02": 9978,
+    "H04": 10233
+  },
+  "sampleChecks": [
+    {
+      "floor": 5,
+      "template": "E02",
+      "answer": [
+        5
+      ],
+      "ours": [
+        5
+      ],
+      "ok": true,
+      "clueOk": true
+    },
+    {
+      "floor": 4,
+      "template": "N01",
+      "answer": [
+        1
+      ],
+      "ours": [
+        1
+      ],
+      "ok": true,
+      "clueOk": true
+    },
+    {
+      "floor": 3,
+      "template": "H02",
+      "answer": [
+        1,
+        1
+      ],
+      "ours": [
+        1,
+        1
+      ],
+      "ok": true,
+      "clueOk": true
+    },
+    {
+      "floor": 2,
+      "template": "N03",
+      "answer": [
+        2
+      ],
+      "ours": [
+        2
+      ],
+      "ok": true,
+      "clueOk": true
+    }
+  ],
+  "branch": {
+    "incomplete": true,
+    "correctNormal": true,
+    "firstWrong": true,
+    "correctDuringWarning": true,
+    "secondWrongFails": true,
+    "resumeKeepsHistory": true,
+    "endingSecret": true,
+    "endingNormalAfterWrong": true,
+    "endingNormalAfterFail": true,
+    "resumeFloorIsFailedFloor": true
+  },
+  "errors": [],
+  "ok": true
+}

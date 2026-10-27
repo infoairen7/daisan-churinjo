@@ -1,0 +1,85 @@
+{
+ "version": 1,
+ "note": "original procedural synthesis (tools/compose_music.py)",
+ "tracks": [
+  {
+   "id": "bgm_title",
+   "file": "bgm_title.mp3",
+   "loopStart": 1.0,
+   "loopEnd": 49.0,
+   "seconds": 48.0
+  },
+  {
+   "id": "bgm_explore1",
+   "file": "bgm_explore1.mp3",
+   "loopStart": 1.0,
+   "loopEnd": 65.0,
+   "seconds": 64.0
+  },
+  {
+   "id": "bgm_explore2",
+   "file": "bgm_explore2.mp3",
+   "loopStart": 1.0,
+   "loopEnd": 65.0,
+   "seconds": 64.0
+  },
+  {
+   "id": "bgm_warning",
+   "file": "bgm_warning.mp3",
+   "loopStart": 1.0,
+   "loopEnd": 33.0,
+   "seconds": 32.0
+  },
+  {
+   "id": "bgm_bedroom",
+   "file": "bgm_bedroom.mp3",
+   "loopStart": 1.0,
+   "loopEnd": 41.0,
+   "seconds": 40.0
+  },
+  {
+   "id": "bgm_secret",
+   "file": "bgm_secret.mp3",
+   "loopStart": 1.0,
+   "loopEnd": 49.0,
+   "seconds": 48.0
+  }
+ ],
+ "stingers": [
+  {
+   "id": "st_impact",
+   "file": "st_impact.mp3",
+   "seconds": 6.5
+  },
+  {
+   "id": "st_braam",
+   "file": "st_braam.mp3",
+   "seconds": 5.5
+  },
+  {
+   "id": "st_hit",
+   "file": "st_hit.mp3",
+   "seconds": 5.0
+  },
+  {
+   "id": "st_stab",
+   "file": "st_stab.mp3",
+   "seconds": 3.5
+  },
+  {
+   "id": "st_riser",
+   "file": "st_riser.mp3",
+   "seconds": 2.2
+  },
+  {
+   "id": "st_scare",
+   "file": "st_scare.mp3",
+   "seconds": 3.6
+  },
+  {
+   "id": "st_whisper",
+   "file": "st_whisper.mp3",
+   "seconds": 3.6
+  }
+ ]
+}

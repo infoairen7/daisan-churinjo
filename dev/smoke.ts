@@ -1,0 +1,28 @@
+import { Renderer } from '../src/engine/renderer';
+import { Scene, Camera } from '../src/engine/scene';
+import { loadGLB } from '../src/engine/gltf';
+import { Mixer } from '../src/engine/anim';
+import { quatLookDir, sub } from '../src/engine/math';
+(async () => {
+  const canvas = document.querySelector('canvas')!;
+  const r = new Renderer(canvas); r.resize(960, 540);
+  const scene = new Scene(); const cam = new Camera();
+  const load = async (n: string) => loadGLB(await (await fetch('assets/models/' + n + '.glb')).arrayBuffer());
+  const [floor, ev, bike, care] = await Promise.all(['floor_shell', 'elevator_animated', 'bicycle_city_basket', 'caretaker_lod'].map(load));
+  const fl = floor.instantiate(); scene.root.add(fl.root);
+  const e = ev.instantiate(); e.root.position = [0, 0, 5.3]; scene.root.add(e.root);
+  const b = bike.instantiate(); b.root.position = [-5.4, 0, -1.475]; scene.root.add(b.root);
+  const c = care.instantiate(); c.root.position = [0, 0, 1.5]; scene.root.add(c.root);
+  const mx = new Mixer(c);
+  scene.sky = [0.05, 0.05, 0.06]; scene.ground = [0.02, 0.02, 0.02]; scene.fogDensity = 0.03;
+  scene.points.push({ position: [-5.4, 2.4, -1], color: [1, 1, 1], intensity: 6, range: 8, enabled: true });
+  scene.points.push({ position: [0, 2.2, 2.5], color: [1, 0.95, 0.9], intensity: 5, range: 8, enabled: true });
+  const shot = (pos: number[], target: number[]) => { cam.position = pos as any; cam.quaternion = quatLookDir(sub(target as any, pos as any)); r.render(scene, cam); return canvas.toDataURL('image/png'); };
+  const out: Record<string, string> = {};
+  out.aisle = shot([0, 1.65, 4.6 - 1.5], [-3, 1.0, -3]);
+  out.bike = shot([-3.6, 1.5, -0.2], [-5.4, 0.6, -1.475]);
+  mx.pose('transform_terror', 0); out.face = shot([0, 1.62, 0.95], [0, 1.58, 1.5]);
+  mx.pose('transform_terror', 2.4); out.terror = shot([0, 1.62, 0.95], [0, 1.58, 1.5]);
+  out.evinside = shot([-0.35, 1.65, 5.3 + 0.4], [-0.85, 1.1, 6.8]);
+  (window as any).__shots = out; (window as any).__stats = { dc: r.drawCalls, tris: r.triangles };
+})().catch((e) => { (window as any).__err = String(e && e.stack || e); });
