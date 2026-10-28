@@ -132,6 +132,9 @@ export class Game {
   fovSpeed = 3;
   maxDt = 0.1;
   dbgFreeze = false;
+  dbgGrab: ((url: string) => void) | null = null;
+  /** debug-build camera override for trailer capture (tools/trailer_capture.mjs) */
+  dbgCam: { pos: V3; quat: Q; fov?: number } | null = null;
   dbgBudget = 0;
   private lastFrame = 0;
 
@@ -188,6 +191,8 @@ export class Game {
       this.adapt(raw);
       this.lastFrame = t;
       this.tick(dt);
+      // debug capture: hand back this exact frame (the drawing buffer is still intact inside the rAF callback)
+      if (this.dbgGrab && this.dbgBudget <= 1e-6) { const r = this.dbgGrab; this.dbgGrab = null; r(this.renderer.canvas.toDataURL('image/jpeg', 0.93)); }
       requestAnimationFrame(frame);
     };
     requestAnimationFrame(frame);
@@ -256,13 +261,14 @@ export class Game {
       q = quatSlerp(o.fromQuat, o.quat, s);
       p = [lerp(o.fromPos[0], o.pos[0], s), lerp(o.fromPos[1], o.pos[1], s), lerp(o.fromPos[2], o.pos[2], s)];
     }
+    if (this.dbgCam) { p = this.dbgCam.pos; q = this.dbgCam.quat; }
     if (this.fx.shake > 0) {
       const a = this.fx.shake * 0.035;
       p = [p[0] + (Math.random() - 0.5) * a, p[1] + (Math.random() - 0.5) * a, p[2] + (Math.random() - 0.5) * a];
     }
     this.camera.position = p; this.camera.quaternion = q;
     const fovNow = this.camera.fov, fovGoal = (this.fovTarget * Math.PI) / 180;
-    this.camera.fov = fovNow + (fovGoal - fovNow) * Math.min(1, dt * this.fovSpeed);
+    this.camera.fov = this.dbgCam?.fov ? (this.dbgCam.fov * Math.PI) / 180 : fovNow + (fovGoal - fovNow) * Math.min(1, dt * this.fovSpeed);
     // flashlight follows the view
     const sp = this.world.scene.spot;
     sp.enabled = this.lightOn;
@@ -1785,6 +1791,8 @@ export class Game {
       seed: (n: number) => { g.forcedSeed = n; },
       setMaxDt: (v: number) => { g.maxDt = v; },
       freeze: (on: boolean) => { g.dbgFreeze = on; g.dbgBudget = 0; },
+      step: (sec: number) => new Promise<string>((res) => { g.dbgBudget = sec; g.dbgGrab = res; }),
+      cam: (pos: V3 | null, yaw = 0, pitch = 0, fov = 0) => { g.dbgCam = pos ? { pos, quat: quatYawPitch(yaw, pitch), fov: fov || undefined } : null; },
       advance: (sec: number) => new Promise<void>((res) => { g.dbgBudget += sec; const chk = () => (g.dbgBudget <= 1e-6 ? requestAnimationFrame(() => res()) : requestAnimationFrame(chk)); chk(); }),
       noAdapt: () => { g.adaptEnabled = false; g.renderer.dynamicScale = 1; },
       fx: () => g.fx,
