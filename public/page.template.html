@@ -285,6 +285,38 @@ img.tag { width: 1.4em; height: 1.4em; margin-right: 8px; border-radius: 3px; }
   #hud-prompt { top: auto; bottom: var(--sa-b); min-width: 0; max-width: calc(100% - 2 * var(--sa-l) - 2 * 210px); padding: 8px 16px; font-size: 0.9em; }
 }
 @media (prefers-reduced-motion: reduce) { .overlay, #chapter p, #secret-caption, #toast { transition: none !important; animation-duration: 1ms !important; } }
+/* ---------------- v2: speech + timed choice ---------------- */
+#say { position: absolute; left: 50%; bottom: calc(var(--sa-b) + 21%); transform: translate(-50%, 6px); width: min(900px, 90vw); text-align: center; z-index: 8; pointer-events: none; opacity: 0; transition: opacity 400ms ease, transform 400ms ease; text-shadow: 0 2px 8px #000, 0 0 2px #000; }
+#say.is-in { opacity: 1; transform: translate(-50%, 0); }
+#say .who { display: block; font-size: 0.78em; letter-spacing: 0.2em; color: var(--muted); margin-bottom: 4px; }
+#say .line { font-size: 1.45em; font-weight: 500; letter-spacing: 0.1em; color: #F4EEE2; }
+.ov-choice { background: linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 52%, rgba(6,4,4,0.72) 100%); align-items: flex-end; justify-content: center; padding-bottom: calc(var(--sa-b) + 1vh); }
+.choice-wrap { width: min(540px, 100%); display: flex; flex-direction: column; gap: 7px; }
+.choice-wrap .menu { gap: 6px; }
+.choice-prompt { margin: 0 0 2px; text-align: center; color: var(--muted); letter-spacing: 0.12em; font-size: 0.95em; text-shadow: 0 1px 4px #000; }
+.choice-prompt.spoken { color: #F4EEE2; font-size: 1.3em; font-weight: 500; letter-spacing: 0.1em; text-shadow: 0 2px 8px #000, 0 0 2px #000; }
+.choice-prompt .who { display: block; font-size: 0.6em; letter-spacing: 0.2em; color: var(--muted); font-weight: 400; }
+.choice-timer { height: 3px; background: rgba(240,235,221,0.14); border-radius: 2px; overflow: hidden; }
+.choice-timer i { display: block; height: 100%; background: var(--amber); transform-origin: left center; }
+.ov-choice.is-late .choice-timer i { background: var(--red); }
+.btn.choice { display: flex; align-items: center; gap: 14px; text-align: left; background: rgba(21,22,25,0.88); min-height: 48px; font-weight: 500; }
+.btn.choice kbd { flex: none; }
+.choice-help { text-align: center; margin: 2px 0 0; text-shadow: 0 1px 3px #000; }
+.demo-tag { margin: -6px 0 0; color: var(--amber); font-size: 0.82em; letter-spacing: 0.14em; border: 1px solid rgba(233,185,110,0.5); border-radius: var(--radius); padding: 4px 10px; align-self: flex-start; }
+.pad-hi { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-bottom: 14px; }
+.pad-hi .btn.key.hi { min-height: 56px; font-size: 1.4em; padding: 0; }
+.pad-hi:not(:has(.btn:not([hidden]))) { display: none; }
+@media (max-height: 560px) { .btn.choice { min-height: 40px; } #say .line { font-size: 1.2em; } .choice-help { display: none; } .choice-prompt.spoken { font-size: 1.1em; } }
+
+.card.nightrules { width: min(620px, 100%); }
+.night-rules { background: #E9E3D3; color: #2b2a2e; border-radius: 2px; padding: 18px 22px 14px; box-shadow: 0 6px 24px rgba(0,0,0,0.45); font-size: 0.95em; line-height: 1.7; }
+.night-rules .nr-head { margin: 0 0 10px; font-weight: 700; letter-spacing: 0.06em; border-bottom: 1px solid #9b9384; padding-bottom: 8px; display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.night-rules .nr-head span { font-weight: 400; color: #5b574f; font-size: 0.9em; }
+.night-rules ol { margin: 0; padding-left: 1.4em; } .night-rules li { margin: 0 0 6px; }
+.night-rules b { font-weight: 700; color: #1d1c20; }
+.night-rules .nr-foot { margin: 10px 0 0; color: #8a3a32; font-size: 0.88em; }
+.card.demo-menu .row { flex-direction: column; align-items: stretch; }
+.card.demo-menu .row .btn { text-align: left; }
 </style>
 
 <div id="app">
@@ -311,6 +343,7 @@ img.tag { width: 1.4em; height: 1.4em; margin-right: 8px; border-radius: 3px; }
   <div id="toast" hidden role="status"></div>
   <div id="caption" hidden aria-live="polite"></div>
   <div id="bigline" hidden></div>
+  <div id="say" hidden aria-live="assertive"></div>
   <div id="secret-caption" hidden></div>
   <div id="chapter" hidden></div>
   <div id="flash" aria-hidden="true"></div>

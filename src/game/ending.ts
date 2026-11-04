@@ -8,10 +8,13 @@ export class Caretaker {
   inst: ModelInstance;
   mixer: Mixer;
   root: Node;
+  /** joint rotations as authored, so procedural poses (arms out, walking legs) never carry over */
+  private rest = new Map<Node, Q>();
   constructor(tpl: ModelTemplate) {
     this.inst = tpl.instantiate();
     this.root = this.inst.root;
     this.mixer = new Mixer(this.inst);
+    for (const n of this.inst.nodes) if (n !== this.root) this.rest.set(n, [...n.quaternion] as Q);
   }
   eyeWorld(): V3 {
     this.root.updateWorld(this.root.parent ? this.root.parent.world : null);
@@ -73,12 +76,61 @@ export class Caretaker {
     this.lunge(sub(eyeTo, off), dur, { rise: opts.rise ?? 0.06, lean, onDone: opts.onDone });
   }
   get lunging() { return !!this.lungeS; }
-  resetPose() { this.armReach = 0; this.twitch = 0; this.exaggerate = 0; this.lungeS = null; this.headBase = null; }
+  resetPose() { for (const [n, q] of this.rest) n.quaternion = [...q] as Q; this.armReach = 0; this.twitch = 0; this.exaggerate = 0; this.lungeS = null; this.headBase = null; this.walkS = null; this.turnS = null; this.headTurn = 0; this.headTurnGoal = 0; this.legPhase = 0; this.legAmt = 0; }
+
+  // ---------------------------------------------------------------- v2: walking, turning, the head (procedural; the model has no walk clip)
+  /** head yaw (radians, + = toward his left) eased toward headTurnGoal at headTurnSpeed rad/s */
+  headTurn = 0;
+  headTurnGoal = 0;
+  headTurnSpeed = 0.8;
+  private walkS: { t: number; dur: number; from: V3; to: V3; onDone?: () => void } | null = null;
+  private turnS: { t: number; dur: number; from: Q; to: Q } | null = null;
+  private legPhase = 0;
+  private legAmt = 0;
+  /** Slow, stiff walk to `to` (world, y ignored) over `dur` seconds. */
+  walkTo(to: V3, dur: number, onDone?: () => void) {
+    this.walkS = { t: 0, dur, from: [...this.root.position] as V3, to: [to[0], this.root.position[1], to[2]], onDone };
+  }
+  /** Turn the whole body to face world yaw (model forward is -Z) over `dur` seconds. */
+  turnTo(yaw: number, dur: number) {
+    this.turnS = { t: 0, dur, from: [...this.root.quaternion] as Q, to: quatAxisAngle([0, 1, 0], yaw) };
+  }
+  /** Yaw that makes him face from his position toward p. */
+  yawToward(p: V3): number { const dx = p[0] - this.root.position[0], dz = p[2] - this.root.position[2]; return Math.atan2(-dx, -dz); }
+  get walking() { return !!this.walkS; }
 
   update(dt: number) {
     const head = this.inst.node('head');
     if (head && this.headBase) head.quaternion = this.headBase; // undo last frame's jitter
     this.mixer.update(dt);
+    // walking: ease in/out along the floor, a small bob, legs swinging from the hips
+    const W = this.walkS;
+    if (W) {
+      W.t += dt;
+      const k = clamp(W.t / W.dur, 0, 1);
+      const e = k * k * (3 - 2 * k);
+      this.legPhase += dt * 5.2;
+      this.legAmt = Math.min(1, this.legAmt + dt * 3);
+      this.root.position = [W.from[0] + (W.to[0] - W.from[0]) * e, W.from[1] + Math.abs(Math.sin(this.legPhase)) * 0.025 * this.legAmt, W.from[2] + (W.to[2] - W.from[2]) * e];
+      if (k >= 1) { const cb = W.onDone; this.walkS = null; this.root.position = [W.to[0], W.from[1], W.to[2]]; cb?.(); }
+    } else this.legAmt = Math.max(0, this.legAmt - dt * 4);
+    if (this.legAmt > 0) {
+      const sw = Math.sin(this.legPhase) * 0.34 * this.legAmt;
+      for (const [hip, knee, sgn] of [['hip_L', 'knee_L', 1], ['hip_R', 'knee_R', -1]] as const) {
+        const h = this.inst.node(hip), kn = this.inst.node(knee);
+        if (h) h.quaternion = quatAxisAngle([1, 0, 0], -sw * sgn);
+        if (kn) kn.quaternion = quatAxisAngle([1, 0, 0], Math.max(0, sw * sgn) * 0.9);
+      }
+      for (const [sh, sgn] of [['shoulder_L', -1], ['shoulder_R', 1]] as const) {
+        const n = this.inst.node(sh); if (n && this.armReach === 0) n.quaternion = quatAxisAngle([1, 0, 0], sw * sgn * 0.5);
+      }
+    }
+    const TS = this.turnS;
+    if (TS) {
+      TS.t += dt; const k = clamp(TS.t / TS.dur, 0, 1);
+      this.root.quaternion = quatSlerp(TS.from, TS.to, k * k * (3 - 2 * k));
+      if (k >= 1) this.turnS = null;
+    }
     const L = this.lungeS;
     if (L) {
       L.t += dt;
@@ -99,9 +151,12 @@ export class Caretaker {
       }
       for (const name of ['elbow_L', 'elbow_R']) { const n = this.inst.node(name); if (n) n.quaternion = quatAxisAngle([1, 0, 0], r * 0.42); }
     }
-    // head jitter (restored next frame, so it never accumulates)
+    // head jitter / slow head turn (restored next frame, so it never accumulates)
+    const dh = this.headTurnGoal - this.headTurn;
+    this.headTurn += Math.sign(dh) * Math.min(Math.abs(dh), this.headTurnSpeed * dt);
     if (head) {
       this.headBase = [...head.quaternion] as Q;
+      if (this.headTurn !== 0) head.quaternion = quatMul(quatAxisAngle([0, 1, 0], this.headTurn), head.quaternion);
       if (this.twitch > 0) {
         const a = 0.09 * this.twitch;
         head.quaternion = quatMul(head.quaternion, quatMul(quatAxisAngle([1, 0, 0], (Math.random() - 0.5) * a), quatAxisAngle([0, 0, 1], (Math.random() - 0.5) * a * 1.4)));

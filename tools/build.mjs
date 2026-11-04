@@ -18,6 +18,7 @@ const args = process.argv.slice(2);
 const get = (k, d) => { const i = args.indexOf(k); return i >= 0 ? args[i + 1] : d; };
 const dev = args.includes('--dev');
 const debug = args.includes('--debug');
+const demo = args.includes('--demo');
 const target = get('--target', 'artifact');
 const web = target === 'web';
 const out = get('--out', web ? 'docs' : 'dist');
@@ -27,6 +28,7 @@ mkdirSync(out, { recursive: true });
 
 const define = {
   __DEBUG__: debug ? 'true' : 'false',
+  __DEMO__: demo ? 'true' : 'false',
   __SHARE_URL__: JSON.stringify(shareUrl),
   __MODEL_EXT__: JSON.stringify(web ? 'glb' : 'json'),
 };
@@ -41,11 +43,13 @@ const r = await esbuild.build({
   minify: !dev, sourcemap: dev ? 'inline' : false, legalComments: 'none', logLevel: 'warning', charset: 'utf8', define,
 });
 const js = r.outputFiles[0].text.replace(/<\/script/gi, '<\\/script');
-const page = readFileSync('public/page.template.html', 'utf8').replace('/*__GAME_JS__*/', () => js);
+let page = readFileSync('public/page.template.html', 'utf8').replace('/*__GAME_JS__*/', () => js);
+// demo builds get their own name in the artifact gallery / browser tab
+if (demo) page = page.replace('<title>第３駐輪場</title>', '<title>第３駐輪場 v2デモ</title>');
 
 const TITLE = '第３駐輪場 / Bicycle Parking No.3';
-const DESC_JA = '深夜23時、5階に停めた自転車を取りに来ただけだった。停電、閉じ込められたエレベーター、駐輪車を数える照合票。2回間違えると管理人が来る。ブラウザで遊べる一人称ホラー謎解き。';
-const DESC_EN = '11 p.m. You only came back for your bike. A power cut, a locked elevator, and a checklist that makes you count the parked bicycles. Get it wrong twice and the caretaker comes.';
+const DESC_JA = '深夜23時、10階に停めた自転車を取りに来ただけだった。停電、閉じ込められたエレベーター、駐輪車を数える照合票、そして巡回する管理人。ブラウザで遊べる一人称ホラー謎解き。';
+const DESC_EN = '11 p.m. You only came back for your bike on the tenth floor. A power cut, a locked elevator, a checklist that makes you count the parked bicycles, and a caretaker on patrol.';
 
 if (web) {
   // split the template: everything before the app markup belongs in <head>

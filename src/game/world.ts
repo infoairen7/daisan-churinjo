@@ -6,8 +6,8 @@ import {
   Scene, Node, Mesh, Material, Geometry, Texture, Camera, PointLight, boxGeometry, planeGeometry, meshNode, mergeGeometries,
 } from '../engine/scene';
 import type { Renderer } from '../engine/renderer';
-import { type V3, quatAxisAngle, m4, m4Compose, m4Mul, hexLinear, type M4 } from '../engine/math';
-import type { FloorPuzzle, Bike } from './puzzle';
+import { type V3, quatAxisAngle, quatMul, m4, m4Compose, m4Mul, hexLinear, type M4 } from '../engine/math';
+import { type FloorPuzzle, type Bike, TOP_FLOOR, MY_SPACE } from './puzzle';
 import * as C from './canvas';
 import { isEn } from './i18n';
 
@@ -21,6 +21,9 @@ const SLOT_X = { A: -5.4, B: 4.6 };
 export const slotZ = (slot: number) => -5.525 + (slot - 1) * 1.35;
 
 export type Lighting = 'normal' | 'dark' | 'emergency' | 'night' | 'off';
+/** v2: the floor with the locked steel door (the knocking beat) */
+export const STEEL_DOOR_FLOOR = 6;
+const FLOORS = TOP_FLOOR;
 
 export class World {
   scene = new Scene();
@@ -57,7 +60,7 @@ export class World {
         { t: 'Please pay at the machine on each floor' },
         { t: 'Keep your paid receipt until you leave' },
         { t: 'A caretaker patrols at night', c: '#B9B1A5' },
-        { t: '1F  Exit   /   2F–5F  Bicycle parking', c: '#E9B96E' },
+        { t: `1F  Exit   /   2F–${FLOORS}F  Bicycle parking`, c: '#E9B96E' },
       ]));
     } else {
       this.noticeTexRules = new Texture(this.rulesImage); this.noticeTexRules.clamp = true;
@@ -66,7 +69,7 @@ export class World {
         { t: '料金は各階の精算機でお支払いください' },
         { t: '精算済票は退場まで保管してください' },
         { t: '夜間は管理人が巡回しています', c: '#B9B1A5' },
-        { t: '1F　出入口　／　2F〜5F　駐輪区画', c: '#E9B96E' },
+        { t: `1F　出入口　／　2F〜${FLOORS}F　駐輪区画`, c: '#E9B96E' },
       ]));
     }
   }
@@ -91,6 +94,12 @@ export class World {
   floorSignMats: Material[] = [];
   floorTex: Texture[] = [];
   door3F = new Node('door3F');
+  /** v2 anomalies */
+  dupBike!: ModelInstance;
+  scrawlNode!: Node;
+  handprints: Node[] = [];
+  footprints = new Node('footprints');
+  private footTex: Texture | null = null;
   door3FGap: Node | null = null;
   /** true = something stands behind the door (the light strip has a gap) */
   door3FShadow(present: boolean) { if (this.door3FGap) this.door3FGap.visible = !present; }
@@ -238,7 +247,11 @@ export class World {
     this.notice = board;
     this.scene.root.add(board);
     // floor signs (pack signage PNGs) on the south wall either side of the EV and on the north wall
-    for (let f = 1; f <= 5; f++) { const t = new Texture(images['floor_' + f]); t.clamp = true; this.floorTex.push(t); }
+    for (let f = 1; f <= FLOORS; f++) {
+      // the pack has signs for 1F–5F; the upper floors are drawn in the same style
+      const t = images['floor_' + f] ? new Texture(images['floor_' + f]) : C.texFromCanvas(C.floorSign(f));
+      t.clamp = true; this.floorTex.push(t);
+    }
     const signSpots: [V3, number][] = [[[-2.6, 2.05, 6.84], Math.PI], [[2.6, 2.05, 6.84], Math.PI], [[-5.2, 2.05, -6.86], 0], [[5.2, 2.05, -6.86], 0]];
     for (const [p, ry] of signSpots) {
       const m = new Material('floor_sign'); m.map = this.floorTex[0]; m.transparent = true; m.roughness = 0.9;
@@ -249,9 +262,9 @@ export class World {
     }
     // 517 private cubicle: low partitions on the south-west corner
     const plum = this.t.floor_shell.materials.find((m) => m.name === 'plum')!;
-    this.cubicle = new Node('cubicle517');
+    this.cubicle = new Node('cubicle' + MY_SPACE);
     const wallB = meshNode('p', boxGeometry(3.0, 1.2, 0.06), plum); wallB.position = [-7.5, 0.6, 4.6];
-    const plateMat = new Material('plate517'); plateMat.map = C.texFromCanvas(C.idPlate('517'));
+    const plateMat = new Material('plate' + MY_SPACE); plateMat.map = C.texFromCanvas(C.idPlate(MY_SPACE));
     const plate = meshNode('plate', planeGeometry(0.4, 0.2), plateMat); plate.position = [-6.6, 1.0, 4.565]; plate.quaternion = quatAxisAngle([0, 1, 0], Math.PI);
     const plateBack = meshNode('plate', planeGeometry(0.4, 0.2), plateMat); plateBack.position = [-6.6, 1.0, 4.635];
     this.cubicle.add(wallB, plate, plateBack);
@@ -269,7 +282,71 @@ export class World {
     this.door3F.add(door, gapL, gapR, gapM, handle);
     this.door3F.visible = false;
     this.scene.root.add(this.door3F);
+    this.buildAnomalies();
   }
+
+  /** v2: things that are not supposed to be there (toggled by the atmosphere director). */
+  private buildAnomalies() {
+    // 7F: your own bicycle, standing in the aisle (yours is locked to the rail in the car)
+    const src = this.t.bicycle_city_basket.materials.find((m) => m.name === 'red')!;
+    const cream = src.clone('bike_dup'); const lin = hexLinear(BIKE_COLORS.cream); cream.color = [lin[0], lin[1], lin[2], 1];
+    cream.emissive = [lin[0] * 0.08, lin[1] * 0.08, lin[2] * 0.08]; // pale enough to read at the far end of the aisle
+    this.dupBike = this.t.bicycle_city_basket.instantiate((m) => (m === src ? cream : m));
+    this.dupBike.root.position = [0.35, 0, -5.45];
+    this.dupBike.root.quaternion = quatAxisAngle([0, 1, 0], -Math.PI / 2 + 0.72); // side-on, front wheel toward the elevator
+    this.dupBike.root.visible = false;
+    const tagMat = new Material('dup_plate'); tagMat.map = C.texFromCanvas(C.idPlate(MY_SPACE)); tagMat.roughness = 0.7; tagMat.emissive = [0.06, 0.06, 0.055];
+    const tag = meshNode('dup_plate', planeGeometry(0.26, 0.13), tagMat); tag.position = [-0.62, 0.62, 0.0]; tag.quaternion = quatAxisAngle([0, 1, 0], -Math.PI / 2);
+    this.dupBike.root.add(tag);
+    this.scene.root.add(this.dupBike.root);
+    // 7F: the space number scratched into the north wall, again and again
+    const sm = new Material('scrawl'); sm.map = C.texFromCanvas(C.scrawl(MY_SPACE)); sm.transparent = true; sm.roughness = 1; sm.depthWrite = false;
+    this.scrawlNode = meshNode('scrawl', planeGeometry(3.4, 1.7), sm);
+    this.scrawlNode.position = [0.1, 1.45, -6.83];
+    this.scrawlNode.visible = false;
+    this.scene.root.add(this.scrawlNode);
+    // 4F onward: palm prints on the inside of the car doors
+    for (const [door, prints] of [['door_left', [[0.12, 1.32, 0.13, 7], [-0.18, 0.98, -0.25, 11]]], ['door_right', [[-0.1, 1.46, -0.1, 3], [0.15, 1.08, 0.2, 5]]]] as const) {
+      const n = this.ev.node(door); if (!n) continue;
+      for (const [x, y, rot, seed] of prints) {
+        const m = new Material('handprint'); m.map = C.texFromCanvas(C.handprint(seed)); m.transparent = true; m.depthWrite = false;
+        m.unlit = true; m.color = [0.42, 0.4, 0.38, 1]; // visible in the car's light without glowing
+        const hp = meshNode('handprint', planeGeometry(0.19, 0.24), m);
+        hp.position = [x, y, 0.047]; hp.quaternion = quatAxisAngle([0, 0, 1], rot);
+        hp.visible = false;
+        n.add(hp); this.handprints.push(hp);
+      }
+    }
+    this.footprints.visible = false;
+    this.scene.root.add(this.footprints);
+  }
+
+  /** 8F: a line of wet prints that came from behind you and passed right beside you (on your left). */
+  layFootprints(near: [number, number], yaw: number) {
+    this.footprints.clear();
+    if (!this.footTex) this.footTex = C.texFromCanvas(C.footprint());
+    const m = new Material('footprint'); m.map = this.footTex; m.transparent = true; m.depthWrite = false; m.roughness = 0.2; m.metallic = 0;
+    const geo = planeGeometry(0.11, 0.26);
+    const fx = -Math.sin(yaw), fz = -Math.cos(yaw), lx = -Math.cos(yaw), lz = Math.sin(yaw);
+    const from: [number, number] = [near[0] - fx * 8 + lx * 0.42, near[1] - fz * 8 + lz * 0.42];
+    const to: [number, number] = [near[0] + fx * 7 + lx * 0.42, near[1] + fz * 7 + lz * 0.42];
+    const dx = to[0] - from[0], dz = to[1] - from[1]; const L = Math.hypot(dx, dz) || 1;
+    const steps = Math.floor(L / 0.36);
+    const blocked = (x: number, z: number) => Math.abs(x) > 8.75 || Math.abs(z) > 6.75 || this.colliders.some((c) => (!c.enabled || c.enabled()) && x > c.minX - 0.05 && x < c.maxX + 0.05 && z > c.minZ - 0.05 && z < c.maxZ + 0.05);
+    for (let i = 0; i <= steps; i++) {
+      const t = i / steps; const side = i % 2 ? 0.11 : -0.11;
+      const x = from[0] + dx * t + lx * side, z = from[1] + dz * t + lz * side;
+      if (blocked(x, z)) continue;
+      const n = meshNode('fp', geo, m);
+      n.position = [x, 0.012, z];
+      n.quaternion = quatMul(quatAxisAngle([0, 1, 0], yaw), quatAxisAngle([1, 0, 0], -Math.PI / 2));
+      this.footprints.add(n);
+    }
+    this.footprints.visible = true;
+  }
+  setHandprints(on: boolean) { for (const h of this.handprints) h.visible = on; }
+  /** a dim cold light over the other bicycle, only while it is there */
+  dupLight = { position: [0.35, 1.7, -4.9] as V3, color: [0.75, 0.82, 0.9] as V3, intensity: 0, range: 4.5, enabled: true };
 
   private buildRacks() {
     const items = new Map<Material, { geometry: Geometry; matrix: M4 }[]>();
@@ -349,12 +426,13 @@ export class World {
     for (const n of lane.nodes) for (const p of n.mesh?.primitives || []) if (p.material.name === 'lamp') p.material.emissiveIntensity = 2.5;
     this.outside.add(lane.root);
     const concreteDark = this.t.floor_shell.materials.find((m) => m.name === 'concrete_dark')!;
-    const facade = meshNode('facade', boxGeometry(18.4, 12.2, 14.2), concreteDark);
-    facade.position = [0, 2.98 + 6.1, 0];
+    const upper = (FLOORS - 1) * 3.0 + 0.2;
+    const facade = meshNode('facade', boxGeometry(18.4, upper, 14.2), concreteDark);
+    facade.position = [0, 2.98 + upper / 2, 0];
     this.outside.add(facade);
     // perforated band lines on the facade (one per floor)
     const steel = this.t.floor_shell.materials.find((m) => m.name === 'steel_dark')!;
-    for (let f = 1; f <= 4; f++) {
+    for (let f = 1; f <= FLOORS - 1; f++) {
       const band = meshNode('band', boxGeometry(18.5, 0.25, 0.1), steel);
       band.position = [0, 2.9 + f * 3, -7.15];
       this.outside.add(band);
@@ -384,7 +462,7 @@ export class World {
       { position: [0, 2.6, -9.6], color: amber, intensity: 2.2, range: 7, enabled: true },
       { position: [0, 2.6, -14.4], color: amber, intensity: 2.2, range: 7, enabled: true },
     ];
-    this.scene.points.push(this.evLight, this.evOutLight, this.termLight, this.accentLight, this.outsideFill, ...this.laneLights);
+    this.scene.points.push(this.evLight, this.evOutLight, this.termLight, this.accentLight, this.outsideFill, ...this.laneLights, this.dupLight);
     // ceiling strips get their own emissive material + halo so a single lamp can fail
     const glowTex = C.texFromCanvas(C.glowSprite('220,228,235'));
     const lampSrc = this.t.floor_shell.materials.find((m) => m.name === 'neutral_lamp')!;
@@ -423,20 +501,26 @@ export class World {
     this.floorContent.clear();
     this.shell.node('floor_shell')!.mesh = floor === 1 ? this.shellMesh1F : this.shellMesh;
     this.outside.visible = floor === 1;
+    // the street lamps only matter on 1F; upstairs they would take point-light slots from the floor's own lamps
+    this.outsideFill.enabled = floor === 1;
+    for (const L of this.laneLights) L.enabled = floor === 1;
     this.exterior.position = [0, -(floor - 1) * 3.0, 0];
     this.city.position = [0, -2, 0];
     this.street.position = [0, -0.06 - (floor === 1 ? 0 : 0.0), 0];
     this.street.visible = true;
     for (const m of this.floorSignMats) m.map = this.floorTex[floor - 1];
-    this.door3F.visible = floor === 3;
+    this.door3F.visible = floor === STEEL_DOOR_FLOOR;
     this.door3FShadow(true);
-    this.accentLight.intensity = floor === 3 ? 0.9 : 0;
-    this.cubicle.visible = floor === 5;
+    this.accentLight.intensity = floor === STEEL_DOOR_FLOOR ? 0.9 : 0;
+    this.cubicle.visible = floor === TOP_FLOOR;
+    this.dupBike.root.visible = false;
+    this.scrawlNode.visible = false;
+    this.footprints.visible = false;
     this.curFloor = floor;
     this.noticeMat.map = floor === 1 ? this.noticeTex1F : this.noticeTexRules;
     this.terminal.visible = floor !== 1;
     this.racks.visible = true;
-    if (this.bikeMode === 'parked') this.bike517.root.visible = floor === 5;
+    if (this.bikeMode === 'parked') this.bike517.root.visible = floor === TOP_FLOOR;
     if (puzzle) this.buildBikes(puzzle.bikes);
     this.setIndicator(String(floor));
     this.rebuildColliders();
@@ -512,11 +596,13 @@ export class World {
     for (const row of ['A', 'B'] as const) for (let s = 1; s <= 6; s++) box(SLOT_X[row], slotZ(s), 1.95, 0.5);
     if (this.floor !== 1) box(-4.6, 5.1, 0.6, 0.45); // payment terminal
     box(4.5, 5.22, 1.36, 0.12); // noticeboard
-    if (this.floor === 5) {
+    if (this.floor === TOP_FLOOR) {
       box(-7.5, 4.6, 3.05, 0.1, { occludes: true });
     }
-    // parked 517
-    cs.push({ minX: -8.35, maxX: -6.45, minZ: 5.2, maxZ: 5.8, enabled: () => this.bikeMode === 'parked' && this.floor === 5 });
+    // parked 1017
+    cs.push({ minX: -8.35, maxX: -6.45, minZ: 5.2, maxZ: 5.8, enabled: () => this.bikeMode === 'parked' && this.floor === TOP_FLOOR });
+    // 7F: the other "1017" in the aisle, while it is there
+    cs.push({ minX: -0.45, maxX: 1.15, minZ: -6.05, maxZ: -4.85, enabled: () => this.dupBike.root.visible });
     // docked bike inside the car
     cs.push({ minX: 0.5, maxX: 1.1, minZ: EV_Z + 0.05 - 0.95, maxZ: EV_Z + 0.05 + 0.95, enabled: () => this.bikeMode === 'docked' });
     this.colliders = cs;
@@ -580,7 +666,7 @@ export class World {
     this.bikeMode = 'parked';
     this.bike517.root.position = [-7.4, 0, 5.5];
     this.bike517.root.quaternion = [0, 0, 0, 1];
-    this.bike517.root.visible = this.floor === 5;
+    this.bike517.root.visible = this.floor === TOP_FLOOR;
   }
   placeBikeDocked() {
     this.bikeMode = 'docked';
@@ -663,6 +749,7 @@ export class World {
     this.evLampMat.emissiveIntensity = (this.lighting === 'off' ? 0 : emergency ? 0.35 : 1) * (1 - this.blackout * 0.9);
     this.evOutLight.intensity = 1.4 * Math.max(this.lightLevel, emergency ? 0.6 : 0);
     this.termLight.intensity = 0.6 * Math.max(this.lightLevel, 0.4);
+    this.dupLight.intensity = this.dupBike.root.visible ? 3.2 * Math.max(0.3, this.lightLevel) : 0;
     const lampScale = Math.max(0.05, this.lightLevel);
     for (const p of this.shellMesh.primitives) {
       if (p.material.name === 'lamp') p.material.emissiveIntensity = 2.2 * Math.max(lampScale, emergency ? 0.5 : 0);

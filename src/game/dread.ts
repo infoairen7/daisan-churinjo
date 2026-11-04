@@ -6,16 +6,23 @@ import type { Game } from './game';
 import { Caretaker } from './ending';
 import { Material } from '../engine/scene';
 import { type V3, clamp } from '../engine/math';
-import { EV_Z } from './world';
+import { EV_Z, STEEL_DOOR_FLOOR } from './world';
+import { TOP_FLOOR } from './puzzle';
 
 interface Mood { night: number; lamps: number[]; flicker: number[]; fog: number; ambient: number; tint: V3; drone: number; vig: number }
 
 const MOODS: Record<string, Mood> = {
   normal: { night: 1, lamps: [1, 1, 1, 1, 1, 1], flicker: [0, 0, 0, 0, 0, 0], fog: 0.035, ambient: 1, tint: [0.9, 0.95, 0.97], drone: 0, vig: 0.28 },
   locked: { night: 0.8, lamps: [1, 1, 1, 1, 1, 1], flicker: [0, 0, 0, 0, 0, 0], fog: 0.05, ambient: 0.8, tint: [0.86, 0.93, 0.95], drone: 0.035, vig: 0.5 },
-  f5: { night: 0.8, lamps: [1, 1, 1, 1, 1, 1], flicker: [0, 0, 0, 0, 1, 0], fog: 0.045, ambient: 0.9, tint: [0.86, 0.93, 0.95], drone: 0.028, vig: 0.4 },
-  f4: { night: 0.7, lamps: [1, 1, 0.75, 1, 1, 1], flicker: [0, 0, 1, 0, 1, 0], fog: 0.05, ambient: 0.8, tint: [0.84, 0.93, 0.9], drone: 0.042, vig: 0.48 },
-  f3: { night: 0.62, lamps: [0.7, 1, 1, 0.85, 1, 0.9], flicker: [2, 0, 0, 1, 0, 0], fog: 0.058, ambient: 0.7, tint: [0.82, 0.92, 0.86], drone: 0.056, vig: 0.56 },
+  // v2: ten floors, a little more tired and darker on the way down (8F is too bright on purpose)
+  f10: { night: 0.82, lamps: [1, 1, 1, 1, 1, 1], flicker: [0, 0, 0, 0, 1, 0], fog: 0.042, ambient: 0.92, tint: [0.86, 0.93, 0.95], drone: 0.025, vig: 0.38 },
+  f9: { night: 0.75, lamps: [1, 1, 0.78, 1, 1, 1], flicker: [0, 0, 1, 0, 0, 0], fog: 0.047, ambient: 0.85, tint: [0.85, 0.93, 0.92], drone: 0.035, vig: 0.44 },
+  f8: { night: 0.9, lamps: [1, 1, 1, 1, 1, 1], flicker: [0, 0, 0, 0, 0, 0], fog: 0.036, ambient: 1, tint: [0.92, 0.96, 0.98], drone: 0.015, vig: 0.32 },
+  f7: { night: 0.68, lamps: [1, 0.8, 1, 1, 0.7, 1], flicker: [0, 1, 0, 0, 1, 0], fog: 0.052, ambient: 0.78, tint: [0.84, 0.92, 0.9], drone: 0.045, vig: 0.5 },
+  f6: { night: 0.62, lamps: [0.7, 1, 1, 0.85, 1, 0.9], flicker: [2, 0, 0, 1, 0, 0], fog: 0.058, ambient: 0.7, tint: [0.82, 0.92, 0.86], drone: 0.056, vig: 0.56 },
+  f5: { night: 0.8, lamps: [0.02, 0.02, 0.02, 0.02, 0.02, 0.02], flicker: [0, 0, 0, 0, 0, 0], fog: 0.09, ambient: 0.35, tint: [0.8, 0.88, 0.86], drone: 0.06, vig: 0.7 },
+  f4: { night: 0.58, lamps: [0.6, 1, 0.8, 0.5, 1, 1], flicker: [1, 0, 2, 0, 0, 1], fog: 0.062, ambient: 0.65, tint: [0.81, 0.91, 0.84], drone: 0.062, vig: 0.6 },
+  f3: { night: 0.5, lamps: [0.3, 0.5, 0.9, 0.3, 0.45, 0.25], flicker: [2, 0, 1, 2, 0, 0], fog: 0.07, ambient: 0.55, tint: [0.8, 0.9, 0.83], drone: 0.07, vig: 0.66 },
   f2: { night: 0.56, lamps: [0.5, 1, 1, 0.45, 0.9, 1], flicker: [2, 0, 1, 2, 0, 0], fog: 0.066, ambient: 0.6, tint: [0.8, 0.91, 0.83], drone: 0.07, vig: 0.64 },
   f1: { night: 0.62, lamps: [1, 0.55, 1, 1, 0.55, 1], flicker: [0, 1, 0, 0, 1, 0], fog: 0.05, ambient: 0.75, tint: [0.84, 0.92, 0.9], drone: 0.04, vig: 0.5 },
 };
@@ -48,6 +55,9 @@ export class Dread {
 
   reset() {
     this.done.clear();
+    this.dupState = 'none'; this.dupSeen = 0;
+    this.g.world.setHandprints(false);
+    this.g.world.dupBike.root.visible = false;
     this.warning = false;
     this.silState = 'none'; this.silHold = false;
     if (this.sil) this.sil.root.visible = false;
@@ -87,7 +97,8 @@ export class Dread {
     if (!s.flags.authenticated) { a.music(null, { fade: 2 }); return; }
     if (this.warning) { a.music('bgm_warning', { gain: 0.95, fade: 0.8 }); return; }
     const f = g.world.floor;
-    a.music(f >= 4 ? 'bgm_explore1' : 'bgm_explore2', { gain: f >= 4 ? 0.85 : 0.95, fade: 3 });
+    if (f === 5) { a.music(null, { fade: 1 }); return; }
+    a.music(f >= 7 ? 'bgm_explore1' : 'bgm_explore2', { gain: f >= 7 ? 0.85 : 0.95, fade: 3 });
   }
 
   /** 5F for the failure reveal: the floor beyond him goes dark, he is lit from above the doorway. */
@@ -107,6 +118,11 @@ export class Dread {
   /** Called when the doors open on a new floor of the main game. */
   arrive(floor: number) {
     this.applyMood();
+    // 7F: your bicycle is standing at the far end of the aisle when the doors open
+    if (floor === 7 && this.dupState === 'none') { this.g.world.dupBike.root.visible = true; this.dupState = 'shown'; this.dupSeen = 0; }
+    if (floor === 7 && this.dupState === 'gone') this.g.world.scrawlNode.visible = true;
+    // the palm prints stay once they have appeared
+    this.g.world.setHandprints(this.done.has('4-hands') && floor < 4);
     if (floor === 2 && !this.done.has('2-silence')) {
       // the garage hum is gone when the doors open; it creeps back
       this.done.add('2-silence');
@@ -176,27 +192,27 @@ export class Dread {
     this.idleT = moved > 0.002 ? 0 : this.idleT + dt;
     const f = w.floor;
 
-    // 5F: someone crosses the floor above
-    if (f === 5 && this.floorT > 28 && !this.done.has('5-ceiling')) {
+    // top floor: someone crosses the roof above
+    if (f === TOP_FLOOR && this.floorT > 28 && !this.done.has('5-ceiling')) {
       this.done.add('5-ceiling');
       for (let i = 0; i < 7; i++) {
         const p = -0.85 + i * 0.28;
         g.audio.play(i % 2 ? 'footstep_left' : 'footstep_right', { gain: 0.55, rate: 0.7, lp: 380, pan: p, delay: i * 0.62 });
       }
     }
-    // 4F: the docked bicycle's wheel turns on its own when you come back to the car
-    if (f === 4 && this.floorT > 22 && !this.done.has('4-wheel') && w.isInsideCar(g.pos) && w.bikeMode === 'docked') {
+    // 9F: the docked bicycle's wheel turns on its own when you come back to the car
+    if (f === 9 && this.floorT > 22 && !this.done.has('4-wheel') && w.isInsideCar(g.pos) && w.bikeMode === 'docked') {
       this.done.add('4-wheel');
       this.wheelSpin = 3.2;
       this.playAt('bicycle_roll_loop', [0.8, 0.4, EV_Z], 0.5, { rate: 0.75 });
     }
-    // 3F: knocking behind the steel door, then the shadow under it is gone
-    if (f === 3 && !this.done.has('3-door')) {
+    // 6F: knocking behind the steel door, then the shadow under it is gone
+    if (f === STEEL_DOOR_FLOOR && !this.done.has('3-door')) {
       const d = Math.hypot(g.pos[0] - 6.6, g.pos[2] + 6.86);
       if (d < 4.6) {
         this.done.add('3-door');
         this.knockAt([6.6, 1.2, -6.9], 0.6, 3);
-        g.wait(2.4).then(() => { if (w.floor === 3) { w.door3FShadow(false); w.dipLamp(3, 0.5); this.playAt('footstep_left', [6.6, 0, -8.2], 0.5, { rate: 0.8 }); g.audio.sting('st_whisper', { gain: 0.7, pan: this.rel([6.6, 1, -6.9]).pan }); } });
+        g.wait(2.4).then(() => { if (w.floor === STEEL_DOOR_FLOOR) { w.door3FShadow(false); w.dipLamp(3, 0.5); this.playAt('footstep_left', [6.6, 0, -8.2], 0.5, { rate: 0.8 }); g.audio.sting('st_whisper', { gain: 0.7, pan: this.rel([6.6, 1, -6.9]).pan }); } });
       }
     }
     // 2F: breath right behind you if you stand still
@@ -206,16 +222,17 @@ export class Dread {
       g.wait(2.6).then(() => g.audio.breath(0.06, 2.2, 0.15, 410));
     }
     if (f === 2) this.updateSilhouette(dt);
+    if (f === 7) this.updateDupBike(dt);
 
     // sparse flavour (sound only)
     this.flavorT -= dt;
     if (this.flavorT <= 0) {
       this.flavorT = 13 + Math.random() * 10;
       const far: V3 = [-g.pos[0] * 0.8 + (Math.random() - 0.5) * 4, 1, clamp(-g.pos[2] + (Math.random() - 0.5) * 6, -6.5, 6.5)];
-      if (f === 4) Math.random() < 0.6 ? this.playAt('bicycle_roll_loop', far, 0.55, { rate: 0.8 }) : this.clankAt(far, 0.16);
-      else if (f === 3) Math.random() < 0.5 ? this.clankAt(far, 0.2) : this.playAt('footstep_right', far, 0.35, { rate: 0.75 });
+      if (f === 9 || f === 7) Math.random() < 0.6 ? this.playAt('bicycle_roll_loop', far, 0.55, { rate: 0.8 }) : this.clankAt(far, 0.16);
+      else if (f === 6 || f === 4) Math.random() < 0.5 ? this.clankAt(far, 0.2) : this.playAt('footstep_right', far, 0.35, { rate: 0.75 });
       else if (f === 2) this.clankAt(far, 0.22);
-      else if (f === 5) this.clankAt(far, 0.12);
+      else if (f === TOP_FLOOR) this.clankAt(far, 0.12);
     }
   }
 
@@ -283,6 +300,63 @@ export class Dread {
       g.wait(this.g.settings.reduceFlash ? 0.35 : 0.08).then(() => { if (this.sil) this.sil.root.visible = false; this.backLight.intensity = 0; });
       if (this.silSeen > 1.15) this.playAt('footstep_left', [p[0] + 1.5, 0, p[2] - 0.3], 0.45, { rate: 0.8, delay: 0.5 });
     }
+  }
+
+  // ------------------------------------------------------------- 7F: the other 1017
+  private dupState: 'none' | 'shown' | 'gone' = 'none';
+  private dupSeen = 0;
+  private updateDupBike(dt: number) {
+    const g = this.g; const w = g.world;
+    if (this.dupState === 'gone') {
+      if (!this.done.has('7-scrawl') && w.scrawlNode.visible) {
+        const r = this.rel(w.scrawlNode.position);
+        if (r.front > 0.85 && r.dist < 9) { this.done.add('7-scrawl'); g.ui.toast(L('壁一面に、同じ番号が刻まれている。', 'The same number is scratched all over the wall.'), 3400); g.audio.sting('st_whisper', { gain: 0.45 }); }
+      }
+      return;
+    }
+    if (this.dupState !== 'shown') return;
+    const p = w.dupBike.root.position;
+    const r = this.rel(p);
+    const inView = r.front > 0.86 && r.dist < 15;
+    if (inView) {
+      this.dupSeen += dt;
+      if (this.dupSeen > 1.4 && !this.done.has('7-dup-line') && !w.isInsideCar(g.pos)) {
+        this.done.add('7-dup-line');
+        g.ui.toast(L('通路の奥に、生成り色のシティ車が停まっている。……自分のと、そっくりだ。', 'An off-white city bike stands at the end of the aisle. ...It looks just like yours.'), 3800);
+      }
+    }
+    // it is gone the moment you look away — or when you get too close
+    if ((this.dupSeen > 1.2 && r.front < 0.25 && this.floorT > 4) || r.dist < 1.5) {
+      this.dupState = 'gone';
+      const near = r.dist < 1.5;
+      if (near) { w.blackout = 0.95; g.wait(0.28).then(() => { w.blackout = 0; }); g.audio.sting('st_stab', { gain: 0.55 }); this.shake = 0.5; }
+      w.dupBike.root.visible = false;
+      w.scrawlNode.visible = true;
+      w.dipLamp(0, 0.6); w.dipLamp(3, 0.6);
+      this.playAt('wheel_latch', p, 0.6, { rate: 0.7 });
+      this.playAt('bicycle_roll_loop', [p[0] + 1.5, 0, p[2] + 0.5], 0.45, { rate: 0.7, delay: 0.3 });
+    }
+  }
+
+  // ------------------------------------------------------------- 4F → down: palm prints on the inside of the doors
+  async handprintBeat() {
+    const g = this.g; const w = g.world;
+    if (this.done.has('4-hands')) return;
+    this.done.add('4-hands');
+    g.audio.music(null, { fade: 0.4 });
+    await g.wait(0.9);
+    const n = w.handprints.length;
+    for (let i = 0; i < n; i++) {
+      this.knockAt([0, 1.3, EV_Z - 1.5], 0.95, 1);
+      w.handprints[i].visible = true;
+      this.shake = 0.35;
+      if (i === 0) g.ui.caption(L('［扉を叩く音……内側から］', '[Banging on the doors... from the inside]'), 2800);
+      await g.wait(0.42 + Math.random() * 0.3);
+    }
+    await g.wait(1.2);
+    g.audio.breath(0.06, 1.6, 0.3, 430);
+    await g.wait(0.6);
+    this.updateMusic();
   }
 
   // ------------------------------------------------------------- elevator stall between 3F and 2F

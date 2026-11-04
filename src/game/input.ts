@@ -105,8 +105,8 @@ export class Input {
     if (code === 'KeyM') { this.onKey({ type: 'memo' }, e); return; }
     if (code === 'KeyF') { this.onKey({ type: 'light' }, e); return; }
     if (code === 'Backspace' || code === 'Delete') { e.preventDefault(); this.onKey({ type: 'backspace' }, e); return; }
-    const d = /^(Digit|Numpad)([1-5])$/.exec(code) || (/^[1-5]$/.test(k) ? [k, '', k] : null);
-    if (d) { this.onKey({ type: 'digit', d: +d[2] }, e); }
+    const d = /^(Digit|Numpad)([0-9])$/.exec(code) || (/^[0-9]$/.test(k) ? [k, '', k] : null);
+    if (d) { this.onKey({ type: 'digit', d: +d[2] === 0 ? 10 : +d[2] }, e); }
   }
 
   private keyup(e: KeyboardEvent) {

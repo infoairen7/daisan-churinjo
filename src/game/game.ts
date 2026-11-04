@@ -5,9 +5,10 @@ import type { ModelTemplate } from '../engine/gltf';
 import { loadGLB } from '../engine/gltf';
 import { fetchModel } from '../engine/fetchmodel';
 import { type V3, type Q, quatYawPitch, quatLookDir, quatSlerp, quatAxisAngle, sub, clamp, lerp, smooth } from '../engine/math';
-import { World, EV_Z, slotZ, type Collider } from './world';
+import { World, EV_Z, slotZ, STEEL_DOOR_FLOOR, type Collider } from './world';
 import { Bedroom, Caretaker } from './ending';
 import { Dread } from './dread';
+import { Encounters } from './encounter';
 import { GameUI, ITEM_INFO, S, type PanelModel } from './ui';
 import { UI } from './ui_assets.gen';
 import { L, isEn, lang, setLang, onLangChange, detectLang, GAME_TITLE, type Lang } from './i18n';
@@ -16,6 +17,7 @@ import { AudioManager } from './audio';
 import { Input, type KeyAction } from './input';
 import {
   generateRun, newSeed, commitAnswer, resumeAfterFail, endingFor, type FloorPuzzle, type Bike, type Progress,
+  FLOOR_ORDER, TOP_FLOOR, MY_SPACE, isPuzzleFloor, isEncounterFloor,
 } from './puzzle';
 import {
   type SaveData, type Settings, type Records, type Phase, loadSave, writeSave, clearSave, loadSettings, writeSettings,
@@ -39,6 +41,10 @@ type Mode = 'title' | 'world' | 'cutscene' | 'bedroom';
 
 declare const __SHARE_URL__: string;
 declare const __DEBUG__: boolean;
+declare const __DEMO__: boolean;
+const TOP = TOP_FLOOR;
+/** floors with something to get past (10F … 2F) */
+const FLOORS_TO_CLEAR = TOP - 1;
 /** The public page to link in posts (set at build time); English posts link the English version. */
 function shareUrl(): string {
   let base = '';
@@ -60,7 +66,7 @@ const ACCEL = 14; // m/s² — reaches walking speed in ~0.16 s
 const DECEL = 22;
 const LOOK_YAW = 0.0042; // rad per CSS px of drag
 const LOOK_PITCH = 0.0034;
-const PLAYER_INSIDE: V3 = [-0.35, EYE, EV_Z - 0.1];
+export const PLAYER_INSIDE: V3 = [-0.35, EYE, EV_Z - 0.1];
 
 export class Game {
   ui: GameUI;
@@ -90,6 +96,7 @@ export class Game {
   pitch = 0;
   camOverride: { fromPos: V3; fromQuat: Q; pos: V3; quat: Q; k: number; speed: number } | null = null;
   fx!: Dread;
+  enc!: Encounters;
   bob = 0;
   vel = 0;
   turnVel = 0;
@@ -148,6 +155,7 @@ export class Game {
     this.settings = loadSettings();
     this.records = loadRecords();
     this.fx = new Dread(this);
+    this.enc = new Encounters(this);
     const firstGesture = () => {
       window.removeEventListener('pointerdown', firstGesture, true); window.removeEventListener('keydown', firstGesture, true);
       this.audio.unlock().then(() => this.fx.updateMusic());
@@ -242,6 +250,7 @@ export class Game {
     this.world.update(dt, this.time, this.camera);
     this.caretaker?.update(dt);
     this.fx.update(dt);
+    this.enc.update(dt);
     // concrete garage rings; the car is tighter; outdoors is dry
     const rz = this.world.floor === 1 && this.pos[2] < -7.05 ? 0.06 : this.world.isInsideCar(this.pos) ? 0.18 : 0.32;
     if (rz !== this.reverbZone) { this.reverbZone = rz; this.audio.setReverb(rz); }
@@ -405,7 +414,7 @@ export class Game {
     [mn, mx] = this.box(-4.6, 0.95, 5.1, 0.58, 1.3, 0.44);
     T({ id: 'terminal', label: () => L('精算機', 'payment machine'), min: mn, max: mx, range: 1.8, enabled: () => w.floor !== 1, activate: () => this.useTerminal() });
     [mn, mx] = this.box(-7.4, 0.6, 5.5, 1.9, 1.15, 0.64);
-    T({ id: 'bike517', label: () => L('自分の自転車 517', 'your bicycle 517'), min: mn, max: mx, range: 1.8, enabled: () => w.floor === 5 && w.bikeMode === 'parked',
+    T({ id: 'bike517', label: () => L(`自分の自転車 ${MY_SPACE}`, `your bicycle ${MY_SPACE}`), min: mn, max: mx, range: 1.8, enabled: () => w.floor === TOP && w.bikeMode === 'parked',
       activate: () => this.inspect517(), useItem: (it) => (it === 'key' ? (this.unlock517(), true) : false), accepts: ['key'] });
     [mn, mx] = this.box(1.22, 1.18, EV_Z - 1.63, 0.2, 0.26, 0.1);
     T({ id: 'call', label: () => L('呼出ボタン', 'call button'), verb: () => L('押す', 'Press'), min: mn, max: mx, range: 1.8, enabled: () => !inCar() && this.pos[2] < EV_Z - 1.5, activate: () => this.pressCall() });
@@ -416,7 +425,10 @@ export class Game {
       useItem: (it) => (it === 'receipt' ? this.useReceipt() : false), accepts: ['receipt'] });
     T({ id: 'rail', label: () => L('運搬レール', 'transport rail'), min: [0.5, 0, EV_Z - 0.75], max: [1.1, 1.0, EV_Z + 1.2], range: 1.9, enabled: () => inCar() || w.bikeMode === 'docked', activate: () => this.inspectRail() });
     [mn, mx] = this.box(6.6, 1.05, -6.86, 1.0, 2.1, 0.08);
-    T({ id: 'door3f', label: () => L('鉄扉', 'steel door'), min: mn, max: mx, range: 1.8, enabled: () => w.floor === 3, activate: () => this.ui.toast(L('鍵が掛かっている。', 'It\'s locked.')) });
+    T({ id: 'door3f', label: () => L('鉄扉', 'steel door'), min: mn, max: mx, range: 1.8, enabled: () => w.floor === STEEL_DOOR_FLOOR, activate: () => this.ui.toast(L('鍵が掛かっている。', 'It\'s locked.')) });
+    [mn, mx] = this.box(0.35, 0.6, -5.45, 1.5, 1.15, 1.2);
+    T({ id: 'dupbike', label: () => L('通路の自転車', 'bicycle in the aisle'), min: mn, max: mx, range: 2.0, enabled: () => w.dupBike.root.visible,
+      activate: () => this.ui.toast(L(`生成り色のシティ車。札は「${MY_SPACE}」。……自分の自転車と、同じ番号だ。`, `An off-white city bike. The tag says ${MY_SPACE}. ...The same number as yours.`), 3800) });
     [mn, mx] = this.box(0, 1.2, -7.0, 2.6, 2.3, 0.2);
     T({ id: 'exit', label: () => L('出入口', 'exit'), min: mn, max: mx, range: 1.6, enabled: () => w.floor === 1 && this.pos[2] > -7, activate: () => this.inspectExit() });
   }
@@ -626,7 +638,7 @@ export class Game {
     const save = loadSave();
     const canContinue = !!save && !['NORMAL_END', 'SECRET_END'].includes(save.phase);
     const go = () => this.contentNotice(() => this.startNewGame());
-    this.ui.showTitle({ canContinue, records: this.records, storageOk: storageAvailable() }, {
+    this.ui.showTitle({ canContinue, records: this.records, storageOk: storageAvailable(), demo: __DEMO__ }, {
       onNew: () => {
         if (canContinue) this.ui.confirm(S.newGame, L('進行中の記録を消して、新しい夜を始めますか？', 'Erase your current progress and start a new night?'), S.newGame, L('戻る', 'Back'), go, () => {});
         else go();
@@ -635,7 +647,45 @@ export class Game {
       onSettings: () => this.openSettings(() => {}),
       onHelp: () => this.ui.help(() => {}),
       onLang: () => this.changeLang(isEn() ? 'ja' : 'en'),
+      onDemo: __DEMO__ ? () => this.demoMenu() : undefined,
     });
+  }
+
+  /** Demo builds only: start a night partway down, right before one of the new scenes. */
+  private demoMenu() {
+    const go = (f: number) => () => { this.ui.close('dialog'); this.contentNotice(() => this.demoStart(f)); };
+    this.ui.dialog({
+      title: L('デモ：場面を選ぶ', 'Demo: choose a scene'),
+      body: L('途中の階から新しい夜を始めます（進行中の記録は上書きされます）。上の階で配られる「夜間利用の注意」は道具に入っています。', 'Starts a new night partway down (replaces any saved progress). The night rules slip from the top floor is already in your Items.'),
+      actions: [
+        { label: L('10F　最初から', '10F  From the start'), onSelect: () => { this.ui.close('dialog'); this.contentNotice(() => this.startNewGame()); } },
+        { label: L('8F　消灯', '8F  Lights out'), primary: true, onSelect: go(8) },
+        { label: L('7F　もう一台の自転車', '7F  The other bicycle'), onSelect: go(7) },
+        { label: L('5F　同乗（6Fを出たところ）', '5F  The passenger (leaving 6F)'), onSelect: go(5) },
+        { label: L('4F　扉の手形（4Fの照合から）', '4F  Palm prints (from the 4F check)'), onSelect: go(4) },
+        { label: L('3F　点呼', '3F  Roll call'), onSelect: go(3) },
+        { label: L('2F　最後の照合', '2F  The last check'), onSelect: go(2) },
+        { label: S.close, onSelect: () => this.ui.close('dialog') },
+      ],
+      onClose: () => this.ui.close('dialog'), cls: 'demo-menu',
+    });
+  }
+
+  private async demoStart(floor: number) {
+    await this.begin();
+    const seed = this.forcedSeed ?? newSeed();
+    const run = generateRun(seed, this.records.completedRuns === 0);
+    const cleared: Record<string, boolean> = {};
+    for (const f of [8, 5, 3]) if (f > floor) cleared[String(f)] = true;
+    this.save = {
+      version: 1, runId: `${seed}-${Date.now().toString(36)}`, seed, firstRun: false, generatedFloors: run.floors,
+      currentFloor: floor, resumeFloor: floor, phase: 'EXPLORE', wrongTotal: 0, warningArmed: false, hasFailed: false,
+      flags: { bikeUnlocked: true, paid: true, receiptAuth: true, wheelDocked: true, authenticated: true, memoUnlocked: false },
+      memo: {}, items: ['key', 'light', 'receipt', 'rules'], savedAt: 0, cleared, failCount: 0,
+    };
+    this.persist();
+    this.arriveInstant(floor);
+    this.ui.toast(L('道具の「夜間利用の注意」を読んでおこう。', 'Read the night rules in your Items first.'), 3600);
   }
 
   /** Shown once per browser before the first night: what kind of scares to expect, and where to tone them down. */
@@ -675,16 +725,17 @@ export class Game {
   share(kind: 'fail' | 'normal' | 'secret') {
     const s = this.save;
     const wrong = s?.wrongTotal ?? 0;
-    const f = s?.resumeFloor ?? 5;
+    const f = s?.resumeFloor ?? TOP;
+    const N = FLOORS_TO_CLEAR;
     let text: string;
     if (kind === 'fail') {
-      text = L(`「第３駐輪場」${f}Ｆで管理人と目が合った……\n突破 ${5 - f}／4フロア・誤答${wrong}回`,
-        `Bicycle Parking No.3: I met the caretaker's eyes on ${f}F...\n${5 - f} of 4 floors cleared, ${wrong} wrong answer${wrong === 1 ? '' : 's'}.`);
+      text = L(`「第３駐輪場」${f}Ｆで管理人と目が合った……\n突破 ${TOP - f}／${N}フロア・誤答${wrong}回`,
+        `Bicycle Parking No.3: I met the caretaker's eyes on ${f}F...\n${TOP - f} of ${N} floors cleared, ${wrong} wrong answer${wrong === 1 ? '' : 's'}.`);
     } else if (kind === 'normal') {
-      text = L(`「第３駐輪場」4フロアを突破して帰宅。GAME CLEAR\n誤答${wrong}回${s?.hasFailed ? '・一度失敗' : ''}`,
-        `Bicycle Parking No.3: cleared all 4 floors and made it home. GAME CLEAR\n${wrong} wrong answer${wrong === 1 ? '' : 's'}${s?.hasFailed ? ', one failure' : ''}.`);
+      text = L(`「第３駐輪場」${N}フロアを突破して帰宅。GAME CLEAR\n誤答${wrong}回${s?.hasFailed ? '・失敗あり' : ''}`,
+        `Bicycle Parking No.3: got down all ${N} floors and made it home. GAME CLEAR\n${wrong} wrong answer${wrong === 1 ? '' : 's'}${s?.hasFailed ? ', caught at least once' : ''}.`);
     } else {
-      text = L('「第３駐輪場」誤答0回で4フロアを突破。シークレットエンドに到達した。', 'Bicycle Parking No.3: cleared all 4 floors with zero wrong answers. Secret ending reached.');
+      text = L(`「第３駐輪場」誤答0回・失敗0回で${N}フロアを突破。シークレットエンドに到達した。`, `Bicycle Parking No.3: got down all ${N} floors without a single mistake. Secret ending reached.`);
     }
     const r = this.records;
     const recs = L(`記録：帰宅 ${r.normal ? '✓' : '—'}　シークレット ${r.secret ? '✓' : '—'}`, `Records: Home ${r.normal ? '✓' : '—'}  Secret ${r.secret ? '✓' : '—'}`);
@@ -708,6 +759,7 @@ export class Game {
     this.audio.stopAllLoops(0.3);
     this.secretShown = false; this.secretT = 0;
     this.fx.reset();
+    this.enc.reset();
     this.hintShown = { back: false, glow: false, key: false, card: false };
     this.fovTarget = 65; this.fovSpeed = 50;
     this.camOverride = null;
@@ -728,9 +780,9 @@ export class Game {
     const run = generateRun(seed, firstRun);
     this.save = {
       version: 1, runId: `${seed}-${Date.now().toString(36)}`, seed, firstRun, generatedFloors: run.floors,
-      currentFloor: 5, resumeFloor: 5, phase: 'INTRO', wrongTotal: 0, warningArmed: false, hasFailed: false,
+      currentFloor: TOP, resumeFloor: TOP, phase: 'INTRO', wrongTotal: 0, warningArmed: false, hasFailed: false,
       flags: { bikeUnlocked: false, paid: false, receiptAuth: false, wheelDocked: false, authenticated: false, memoUnlocked: false },
-      memo: {}, items: ['key', 'light'], savedAt: 0,
+      memo: {}, items: ['key', 'light'], savedAt: 0, cleared: {}, failCount: 0,
     };
     this.persist();
     this.beginIntro();
@@ -754,7 +806,7 @@ export class Game {
     const s = this.save;
     s.phase = 'INTRO';
     s.flags = { ...s.flags, bikeUnlocked: false, paid: false, receiptAuth: false, wheelDocked: false, authenticated: false };
-    s.items = s.items.filter((i) => i !== 'receipt');
+    s.items = s.items.filter((i) => i !== 'receipt' && i !== 'rules');
     if (!s.items.includes('key')) s.items.unshift('key');
     this.persist();
   }
@@ -768,8 +820,8 @@ export class Game {
   puzzleFor(floor: number): FloorPuzzle | null { return this.save.generatedFloors.find((f) => f.floor === floor) || null; }
   progress(): Progress { const s = this.save; return { currentFloor: s.currentFloor, resumeFloor: s.resumeFloor, wrongTotal: s.wrongTotal, warningArmed: s.warningArmed, hasFailed: s.hasFailed }; }
 
-  private setFloor(floor: number) {
-    const p = floor >= 2 ? this.puzzleFor(floor) : null;
+  setFloor(floor: number) {
+    const p = isPuzzleFloor(floor) ? this.puzzleFor(floor) : null;
     this.world.setFloor(floor, p);
     if (p) this.world.addBikeColliders(p.bikes);
     this.refreshBikeTargets(p);
@@ -779,9 +831,34 @@ export class Game {
   }
 
   private setHeld(item: string | null) { this.heldItem = item; this.ui.setHeld(item); this.refreshPrompt(); }
+  setHeldPublic(item: string | null) { this.setHeld(item); }
   private toggleLight() {
     this.lightOn = !this.lightOn; this.ui.setLightOn(this.lightOn);
     this.audio.play('panel_press', { gain: 0.6, rate: 1.4 });
+  }
+  toggleLightPublic(on: boolean) { this.lightOn = on; this.ui.setLightOn(on); }
+  refreshHintsPublic() { this.refreshHints(); }
+  placePlayerPublic(p: V3, yaw: number) { this.placePlayer(p, yaw); }
+  /** true if (x,z) is open floor (not inside a wall, rack, pillar or bike) with `r` clearance */
+  pointFree(x: number, z: number, r: number): boolean {
+    if (Math.abs(x) > 8.8 - r || z < -6.85 + r || z > 6.85 - r) return false;
+    return !this.colliders().some((c) => x > c.minX - r && x < c.maxX + r && z > c.minZ - r && z < c.maxZ + r);
+  }
+  /** Player in the car at `floor`, bike on the rail, doors shut (encounter restarts). */
+  setupCarAt(floor: number) {
+    const w = this.world;
+    this.view = 'facility';
+    if (this.caretaker) this.caretaker.root.visible = false;
+    this.setFloor(floor);
+    w.setLighting('night');
+    w.setPanelPower('auth');
+    w.setPanelDisplay(L('入力', 'INPUT'));
+    w.setDoorsInstant(false);
+    w.placeBikeDocked();
+    this.placePlayer(PLAYER_INSIDE, 0);
+    this.ui.setWarning(false); this.fx.setWarning(false);
+    this.ui.showHud(true);
+    this.ui.fadeInstant(1); this.ui.fade(0, 900);
   }
   private refreshHints() {
     this.refreshPrompt();
@@ -793,16 +870,17 @@ export class Game {
     if (s.phase === 'INTRO' && this.introStage !== '5F') return '';
     if (s.phase === 'INTRO' || s.phase === 'PAID') {
       if (this.world.bikeMode === 'held') return s.flags.paid ? L('自転車を押している。エレベーターの呼出ボタンへ。', 'Pushing your bicycle. Go to the elevator call button.') : L('自転車を押している。精算機で精算する。', 'Pushing your bicycle. Pay at the payment machine.');
-      return L('５Ｆ。自分の自転車は南西の区画、517番。', '5F. Your bicycle is in space 517, in the corner left of the elevator.');
+      return L(`${TOP}Ｆ。自分の自転車は南西の区画、${MY_SPACE}番。`, `${TOP}F. Your bicycle is in space ${MY_SPACE}, in the corner left of the elevator.`);
     }
     if (s.phase === 'LOCKED' || s.phase === 'BLACKOUT') return L('閉じ込められた。レールと認証口を調べる。', 'Trapped. Check the rail and the reader.');
     if (s.phase === 'EXIT') return this.world.bikeMode === 'held' ? L('自転車を押して出入口へ。', 'Push your bicycle to the exit.') : L('前輪をレールから外して、自転車と出る。', 'Release the front wheel from the rail and leave with your bicycle.');
+    if (s.flags.authenticated && this.world.floor === 8 && !this.enc?.isCleared(8)) return L('照合票が出ない。操作盤には「巡回中」。', 'No checklist here. The panel says PATROL.');
     if (s.flags.authenticated) return this.world.bikeMode === 'docked' ? L('自転車は運搬レールに固定されています', 'Your bicycle is locked to the transport rail') : '';
     return '';
   }
 
   /** Move the camera from wherever it is now to pos/quat. */
-  private camTo(pos: V3, quat: Q, speed = 1.6) {
+  camTo(pos: V3, quat: Q, speed = 1.6) {
     this.camOverride = { fromPos: [...this.camera.position] as V3, fromQuat: [...this.camera.quaternion] as Q, pos, quat, k: 0, speed };
   }
 
@@ -840,10 +918,11 @@ export class Game {
     this.introStage = '5F';
     this.save.phase = 'PAID';
     if (!this.save.items.includes('receipt')) this.save.items.push('receipt');
-    this.setFloor(5);
+    if (!this.save.items.includes('rules')) this.save.items.push('rules');
+    this.setFloor(TOP);
     this.world.setLighting('normal');
     this.world.setPanelPower('normal');
-    this.world.setPanelDisplay('5');
+    this.world.setPanelDisplay(String(TOP));
     this.world.setDoorsInstant(false);
     this.placePlayer([-1.2, EYE, 2.2], Math.PI);
     this.world.placeBikeHeld(this.pos, this.yaw);
@@ -863,7 +942,25 @@ export class Game {
   private langImages: Record<string, string> = {};
   /** The pack's rule board and receipt are Japanese artwork; English gets the same layout drawn on a canvas. */
   rulesImage(): string { return isEn() ? (this.langImages.rules ||= C.rulesBoardEn().toDataURL('image/png')) : UI.operating_rules; }
-  receiptImage(): string { return isEn() ? (this.langImages.receipt ||= C.receiptEn().toDataURL('image/png')) : UI.paid_receipt; }
+  receiptImage(): string { const k = 'receipt_' + lang(); return (this.langImages[k] ||= C.receipt(TOP, MY_SPACE, isEn()).toDataURL('image/png')); }
+
+  /** v2: the slip that comes out with the receipt. Every encounter's answer is in here. */
+  showNightRules(after: () => void, first = false) {
+    const items = isEn()
+      ? ['A caretaker patrols the building at night.',
+        'If the lights go out, <b>do not move</b>. Close your eyes, and keep them closed until the footsteps have gone.',
+        'If the caretaker gets into the elevator with you, <b>do not answer him, do not touch the control panel, and do not meet his eyes</b>.',
+        'If the caretaker asks to confirm your space number, answer <b>exactly as printed on your paid receipt</b>.',
+        'Never shine a light in the caretaker\'s face.']
+      : ['夜間は管理人が巡回しています。',
+        '照明が消えたときは、<b>その場から動かず</b>、目を閉じてください。足音が遠ざかるまで、目を開けないでください。',
+        '管理人がエレベーターに乗ってきたら、<b>話しかけられても答えず、操作盤に触れず、目を合わせないでください</b>。',
+        '管理人に保管番号を確かめられたら、<b>精算済票のとおりに</b>答えてください。',
+        '管理人の顔を、ライトで照らさないでください。'];
+    const html = `<div class="night-rules"><p class="nr-head">${L('第３駐輪場　夜間利用の注意', 'Bicycle Parking No.3 — Night use')}<span>${L('23:00〜翌5:00', '11 p.m. – 5 a.m.')}</span></p><ol>${items.map((t) => `<li>${t}</li>`).join('')}</ol><p class="nr-foot">${L('※ 照合を誤った方のもとへは、管理人がうかがいます。', '* The caretaker will visit anyone who gets a check wrong.')}</p></div>`;
+    this.ui.dialog({ title: first ? L('もう一枚、紙が出てきた', 'A second slip came out') : L('夜間利用の注意', 'Night rules'), html, cls: 'nightrules',
+      actions: [{ label: first ? L('読んだ', 'Got it') : S.close, primary: true, onSelect: () => { this.ui.close('dialog'); after(); } }], onClose: () => { this.ui.close('dialog'); after(); } });
+  }
 
   showRules(after: () => void) {
     this.ui.dialog({ title: L('夜間運搬の照合手順', 'Night transport check'), image: this.rulesImage(), imageAlt: L('1 票に書かれた条件を調べる。2 台数を左から順に入力する。3 「開」を押して照合する。「閉」は入力消去、「再点検」は戻る。警告後の再誤答は管理人を呼びます。自分の自転車・空き枠は数えません。', '1 Read the conditions on the checklist. 2 Enter the counts from left to right. 3 Press OPEN to check. CLOSE clears input, Recheck goes back. A wrong answer after a warning calls the caretaker. Your bicycle and empty slots do not count.'),
@@ -873,14 +970,16 @@ export class Game {
 
   private useTerminal() {
     const s = this.save;
-    if (this.world.floor === 5 && !s.flags.paid && (s.phase === 'INTRO')) {
+    if (this.world.floor === TOP && !s.flags.paid && (s.phase === 'INTRO')) {
       s.flags.paid = true;
       if (!s.items.includes('receipt')) s.items.push('receipt');
+      if (!s.items.includes('rules')) s.items.push('rules');
       this.audio.play('receipt_feed'); this.ui.caption(L('［票が出る］', '[Receipt prints]'));
       this.persist(this.world.bikeMode === 'held' ? 'PAID' : 'INTRO');
-      this.ui.dialog({ title: L('200円を支払った', 'Paid 200 yen'), image: this.receiptImage(), imageAlt: L('精算済票。保管階5F、保管番号517、料金200円、精算時刻23:07。運搬認証口に票を通し、前輪をレールへ合わせる。', 'Paid receipt. Floor 5F, space 517, fee 200 yen, paid at 23:07. Insert into the transport reader and set the front wheel on the rail.'),
-        body: L('精算済票を受け取った。「道具」に入れておく。', 'You got the paid receipt. It\'s in your Items.'), cls: 'receipt',
-        actions: [{ label: S.close, primary: true, onSelect: () => { this.ui.close('dialog'); this.refreshHints(); } }], onClose: () => { this.ui.close('dialog'); this.refreshHints(); } });
+      const next = () => { this.ui.close('dialog'); this.audio.play('receipt_feed', { rate: 0.9 }); this.showNightRules(() => { this.refreshHints(); this.ui.toast(L('どちらも「道具」に入れた。', 'Both are in your Items.'), 2400); }, true); };
+      this.ui.dialog({ title: L('200円を支払った', 'Paid 200 yen'), image: this.receiptImage(), imageAlt: L(`精算済票。保管階${TOP}F、保管番号${MY_SPACE}、料金200円、精算時刻23:07。運搬認証口に票を通し、前輪をレールへ合わせる。`, `Paid receipt. Floor ${TOP}F, space ${MY_SPACE}, fee 200 yen, paid at 23:07. Insert into the transport reader and set the front wheel on the rail.`),
+        body: L('精算済票を受け取った。', 'You got the paid receipt.'), cls: 'receipt',
+        actions: [{ label: L('次へ', 'Next'), primary: true, onSelect: next }], onClose: next });
       return;
     }
     this.ui.toast(s.flags.paid ? L('精算は済んでいる。', 'Already paid.') : L('この階の精算機。', 'This floor\'s payment machine.'));
@@ -888,7 +987,7 @@ export class Game {
 
   private inspect517() {
     if (!this.save.flags.bikeUnlocked) {
-      this.ui.dialog({ title: L('自分の自転車　517', 'Your bicycle 517'), body: L('生成り色のシティ車。後輪の錠が掛かったままだ。', 'An off-white city bike. The rear wheel is still locked.'), image: UI.bicycle_city, imageAlt: L('シティ車', 'City bike'),
+      this.ui.dialog({ title: L(`自分の自転車　${MY_SPACE}`, `Your bicycle ${MY_SPACE}`), body: L('生成り色のシティ車。後輪の錠が掛かったままだ。', 'An off-white city bike. The rear wheel is still locked.'), image: UI.bicycle_city, imageAlt: L('シティ車', 'City bike'),
         html: `<p class="amber small">${L(`${this.ui.touch ? '「道具」ボタン' : '「道具」（I キー）'}から自転車の鍵を選んで「使う」。`, `Choose the bike key from ${this.ui.touch ? 'the Items button' : 'Items (I key)'} and select Use.`)}</p>`,
         actions: [
           { label: L('鍵を使う', 'Use the key'), primary: true, dbl: true, onSelect: () => { this.ui.close('dialog'); this.unlock517(); } },
@@ -920,7 +1019,7 @@ export class Game {
         }
         return;
       }
-      if (w.floor === 5) {
+      if (w.floor === TOP) {
         if (w.bikeMode !== 'held') { this.ui.toast(L('先に自分の自転車を取ってこよう。', 'Get your bicycle first.')); return; }
         if (!s.flags.paid) { this.ui.toast(L('先に精算を済ませよう。精算機はエレベーターの左。', 'Pay first. The payment machine is beside the elevator.')); return; }
         await this.blackout(false);
@@ -932,7 +1031,7 @@ export class Game {
   }
 
   private async rideUp() {
-    // normal operation: 1F → 5F
+    // normal operation: 1F → 10F (it stops once on the way, where nobody is waiting)
     const w = this.world; const ses = this.session;
     this.mode = 'cutscene';
     this.introStage = 'up';
@@ -940,13 +1039,26 @@ export class Game {
     await w.closeDoors();
     if (ses !== this.session) return;
     this.audio.loop('elevator_motor_loop', 1, 0.3); this.ui.caption(L('［上昇中］', '[Going up]'), 2600);
-    for (let f = 2; f <= 5; f++) {
-      await this.wait(1.1);
+    for (let f = 2; f <= TOP; f++) {
+      await this.wait(0.75);
       if (ses !== this.session) return;
-      w.setIndicator(String(f), '▲'); w.setPanelDisplay(String(f));
-      if (f === 4) { this.setFloor(5); w.setIndicator('4', '▲'); w.setPanelDisplay('4'); this.ui.setFloor('4F'); }
+      w.setIndicator(String(f), '▲'); w.setPanelDisplay(String(f)); this.ui.setFloor(`${f}F`);
+      if (f === 2) this.setFloor(TOP);
+      if (f === 2) { w.setIndicator('2', '▲'); w.setPanelDisplay('2'); this.ui.setFloor('2F'); }
+      if (f === 8) {
+        // a stop nobody asked for: the doors stay shut; one knock from outside
+        this.audio.stopLoop('elevator_motor_loop', 0.2);
+        this.ui.caption(L('［停止］', '[Stopped]'));
+        w.setIndicator('8');
+        await this.wait(1.4);
+        if (ses !== this.session) return;
+        this.fx.knockAt([0, 1.3, EV_Z - 1.7], 0.55, 1);
+        await this.wait(1.6);
+        if (ses !== this.session) return;
+        this.audio.loop('elevator_motor_loop', 1, 0.3); this.ui.caption(L('［上昇中］', '[Going up]'), 1800);
+      }
     }
-    w.setIndicator('5'); this.ui.setFloor('5F');
+    w.setIndicator(String(TOP)); this.ui.setFloor(`${TOP}F`);
     this.audio.stopLoop('elevator_motor_loop', 0.4);
     await this.wait(0.5);
     this.ui.caption(L('［扉が開く］', '[Doors open]')); this.audio.play('elevator_open');
@@ -974,7 +1086,7 @@ export class Game {
     if (!inside) w.setDoorsInstant(false);
     w.setLighting('emergency');
     w.setPanelPower('off');
-    w.setIndicator('5', '');
+    w.setIndicator(String(TOP), '');
     this.fx.applyMood();
     this.audio.setDuck(1, 0.6);
     this.audio.stopLoop('outdoor_air_loop', 0.3);
@@ -1014,8 +1126,9 @@ export class Game {
     const s = this.save; const w = this.world;
     s.phase = 'LOCKED';
     if (!s.items.includes('receipt')) s.items.push('receipt');
+    if (!s.items.includes('rules')) s.items.push('rules');
     s.flags.paid = true; s.flags.bikeUnlocked = true;
-    this.setFloor(5);
+    this.setFloor(TOP);
     w.setLighting('emergency');
     w.setPanelPower('off');
     w.setDoorsInstant(false);
@@ -1128,11 +1241,11 @@ export class Game {
       await w.openDoors();
       if (ses !== this.session) return;
       this.save.phase = 'EXPLORE';
-      this.save.currentFloor = 5; this.save.resumeFloor = 5;
+      this.save.currentFloor = TOP; this.save.resumeFloor = TOP;
       this.persist();
       this.mode = 'world';
-      this.ui.setFloor('5F');
-      this.ui.toast(L('５Ｆの扉が開いた。照合票は操作盤で読める。', 'The 5F doors opened. The checklist is on the control panel.'), 3600);
+      this.ui.setFloor(`${TOP}F`);
+      this.ui.toast(L(`${TOP}Ｆの扉が開いた。照合票は操作盤で読める。`, `The ${TOP}F doors opened. The checklist is on the control panel.`), 3600);
       this.refreshHints();
     });
   }
@@ -1160,9 +1273,13 @@ export class Game {
 
   private panelModel(): PanelModel {
     const s = this.save; const f = this.world.floor;
+    const idx = FLOOR_ORDER.indexOf(f);
+    const pass = isEncounterFloor(f) && s.flags.authenticated;
     return {
-      mode: this.panelMode(), floor: f, clueNo: `0${6 - f}`, puzzle: this.panelMode() === 'auth' ? this.puzzleFor(f) : null,
+      mode: this.panelMode(), floor: f, clueNo: idx >= 0 ? `0${idx + 1}` : '', puzzle: this.panelMode() === 'auth' && isPuzzleFloor(f) ? this.puzzleFor(f) : null,
       input: this.panelInput, warning: s.warningArmed, message: this.panelMsg, messageWarn: this.panelMsgWarn, locked: this.panelLocked,
+      passTitle: pass ? (this.enc.isCleared(f) ? L('下降', 'Going down') : L('巡回中', 'Patrol in progress')) : undefined,
+      passText: pass ? (this.enc.isCleared(f) ? L('この階の照合はありません。「開」で下降します。', 'No check on this floor. Press OPEN to go down.') : L('この階では照合票が出ません。巡回が終わるまでお待ちください。', 'No checklist on this floor. Please wait until the patrol is over.')) : undefined,
     };
   }
   private refreshPanel() { this.ui.updatePanel(this.panelModel()); }
@@ -1176,9 +1293,11 @@ export class Game {
   private panelDigit(d: number) {
     const mode = this.panelMode();
     this.audio.play('panel_press', { restart: true });
-    this.world.pressButtonAnim(d);
+    if (mode !== 'normal' && d <= 5) this.world.pressButtonAnim(d);
     if (mode === 'dead') { this.panelMsg = L('反応しない。', 'No response.'); this.panelMsgWarn = false; this.refreshPanel(); return; }
     if (mode === 'normal') { this.normalDestination(d); return; }
+    if (d > 5) return; // the upper-floor keys only exist in normal operation
+    if (!isPuzzleFloor(this.world.floor)) { this.panelMsg = L('照合票が出ていない。', 'There is no checklist.'); this.panelMsgWarn = false; this.refreshPanel(); return; }
     const p = this.puzzleFor(this.world.floor)!;
     if (this.panelInput.length >= p.codeLength) { this.panelMsg = L(`入力は${p.codeLength}桁。「閉」で消して入れ直せる。`, `The code has ${p.codeLength} digit${p.codeLength > 1 ? 's' : ''}. CLOSE clears it.`); this.panelMsgWarn = false; }
     else { this.panelInput.push(d); this.panelMsg = ''; }
@@ -1191,6 +1310,7 @@ export class Game {
     this.audio.play('panel_press', { restart: true, rate: 0.9 });
     if (mode === 'dead') { this.panelMsg = L('反応しない。', 'No response.'); this.refreshPanel(); return; }
     if (mode === 'normal') { this.normalDoor(false); return; }
+    if (!isPuzzleFloor(this.world.floor)) { this.panelMsg = L('反応しない。', 'No response.'); this.refreshPanel(); return; }
     this.panelInput = []; this.panelMsg = L('入力を消去した。', 'Input cleared.'); this.panelMsgWarn = false;
     this.world.setPanelDisplay(L('入力', 'INPUT'));
     this.refreshPanel();
@@ -1198,12 +1318,13 @@ export class Game {
 
   private normalDestination(d: number) {
     const w = this.world; const s = this.save;
+    if (d <= 5) w.pressButtonAnim(d);
     if (w.floor === 1) {
-      if (d === 5) { this.ui.close('panel'); this.rideUp(); return; }
-      this.panelMsg = d === 1 ? L('ここは１階だ。', 'This is 1F.') : L('自転車は５階に停めてある。', 'Your bicycle is on 5F.'); this.refreshPanel(); return;
+      if (d === TOP) { this.ui.close('panel'); this.rideUp(); return; }
+      this.panelMsg = d === 1 ? L('ここは１階だ。', 'This is 1F.') : L(`自転車は${TOP}階に停めてある。`, `Your bicycle is on ${TOP}F.`); this.refreshPanel(); return;
     }
-    if (w.floor === 5) {
-      if (d === 5) { this.panelMsg = L('ここは５階だ。', 'This is 5F.'); this.refreshPanel(); return; }
+    if (w.floor === TOP) {
+      if (d === TOP) { this.panelMsg = L(`ここは${TOP}階だ。`, `This is ${TOP}F.`); this.refreshPanel(); return; }
       if (w.bikeMode === 'held' && s.flags.paid) {
         // a downward call from inside also triggers the outage (handoff: 「下降操作の際に停電」)
         if (w.isInsideCar(this.pos) && w.isInsideCar(w.bike517.root.position)) { this.ui.close('panel'); this.blackout(true); return; }
@@ -1225,6 +1346,15 @@ export class Game {
     if (mode === 'dead') { this.panelMsg = L('反応しない。', 'No response.'); this.refreshPanel(); return; }
     if (mode === 'normal') { this.normalDoor(true); return; }
     const s = this.save;
+    if (!isPuzzleFloor(this.world.floor)) {
+      const f = this.world.floor;
+      if (isEncounterFloor(f) && this.enc.isCleared(f)) {
+        this.ui.close('panel');
+        s.currentFloor = f - 1; s.resumeFloor = f - 1; s.phase = 'TRANSIT'; this.persist();
+        this.descend(f - 1);
+      } else { this.panelMsg = L('巡回中は動かない。', 'It won\'t move during the patrol.'); this.panelMsgWarn = false; this.refreshPanel(); }
+      return;
+    }
     const p = this.puzzleFor(this.world.floor)!;
     const { result, next } = commitAnswer(this.progress(), p, this.panelInput);
     if (result === 'incomplete') { this.panelMsg = S.incomplete; this.panelMsgWarn = false; this.refreshPanel(); return; }
@@ -1277,29 +1407,41 @@ export class Game {
   }
 
   // ================================================================= descent (§5)
-  private async descend(next: number) {
+  async descend(next: number) {
     const w = this.world; const ses = this.session; const from = w.floor;
     this.mode = 'cutscene';
     if (!w.isInsideCar(this.pos)) this.camTo(PLAYER_INSIDE, quatYawPitch(0, 0));
     if (w.doorState !== 'closed') { this.ui.caption(L('［扉が閉まる］', '[Doors close]')); this.audio.play('elevator_close'); await w.closeDoors(); }
     if (ses !== this.session) return;
     if (this.camOverride) { this.placePlayer(PLAYER_INSIDE, 0); }
+    // 4F: palm prints appear on the inside of the doors, one bang at a time (turn to face the doors first)
+    if (from === 4) {
+      this.camTo(PLAYER_INSIDE, quatYawPitch(0, 0), 1.3);
+      await this.fx.handprintBeat();
+      if (ses !== this.session) return;
+      this.placePlayer(PLAYER_INSIDE, 0);
+    }
     this.audio.loop('elevator_motor_loop', 1, 0.3); this.ui.caption(L('［下降中］', '[Going down]'), 2400);
     w.setIndicator(String(from), '▼');
     w.blackout = 0.35;
+    // 6F → 5F: the car stops where nobody pressed, and he gets in
+    if (next === 5 && !this.enc.isCleared(5)) { this.enc.ride(true); return; }
     await this.wait(1.6);
     if (ses !== this.session) return;
-    if (from === 4) { w.blackout = 0.8; this.fx.shake = 0.35; await this.wait(0.45); w.blackout = 0.35; }
+    if (from === 9) { w.blackout = 0.8; this.fx.shake = 0.35; await this.wait(0.45); w.blackout = 0.35; }
     if (from === 3) { await this.fx.stall(); if (ses !== this.session) return; w.blackout = 0.35; }
     this.setFloor(next);
     w.setIndicator(String(next), '▼');
-    w.setPanelDisplay(next === 1 ? String(next) : L('入力', 'INPUT'));
+    w.setPanelDisplay(next === 1 ? String(next) : isEncounterFloor(next) ? '' : L('入力', 'INPUT'));
     await this.wait(1.6);
     if (ses !== this.session) return;
     w.setIndicator(String(next));
     this.audio.stopLoop('elevator_motor_loop', 0.4);
     w.blackout = 0;
     await this.wait(0.4);
+    if (ses !== this.session) return;
+    // 3F: he is waiting right outside the doors
+    if (next === 3 && this.enc.arrive(3)) return;
     this.save.phase = next === 1 ? 'EXIT' : 'EXPLORE';
     this.persist();
     this.ui.caption(L('［扉が開く］', '[Doors open]')); this.audio.play('elevator_open');
@@ -1309,20 +1451,25 @@ export class Game {
     this.flavorT = 6 + Math.random() * 6;
     this.outsideZone = null;
     this.fx.arrive(next);
+    this.enc.arrive(next);
     if (next === 1) this.ui.toast(L('１Ｆに着いた。前輪をレールから外して、出よう。', '1F. Release the front wheel and get out.'), 3600);
+    else if (next === 8) { w.setPanelDisplay(L('巡回中', 'PATROL')); this.ui.toast(L('８Ｆ。照合票が出ない。操作盤に「巡回中」とある。', '8F. No checklist. The panel says PATROL.'), 3400); }
     else this.ui.toast(L(`${next}Ｆ。照合票は操作盤で読める。`, `${next}F. The checklist is on the control panel.`), 2600);
     this.refreshHints();
   }
 
-  private arriveInstant(floor: number) {
+  arriveInstant(floor: number) {
     const s = this.save; const w = this.world;
     this.view = 'facility';
-    if (this.caretaker) this.caretaker.root.visible = false;
+    if (this.caretaker) { this.caretaker.root.visible = false; this.caretaker.resetPose(); }
     s.currentFloor = floor;
+    this.enc.reset();
+    // an encounter that was interrupted or lost starts over
+    if (isEncounterFloor(floor) && this.enc.resume(floor)) return;
     this.setFloor(floor);
     w.setLighting('night');
     w.setPanelPower('auth');
-    w.setPanelDisplay(floor === 1 ? '1' : L('入力', 'INPUT'));
+    w.setPanelDisplay(floor === 1 ? '1' : floor === 8 ? (this.enc.isCleared(8) ? L('下降', 'DOWN') : L('巡回中', 'PATROL')) : L('入力', 'INPUT'));
     w.setDoorsInstant(true);
     if (s.phase !== 'EXIT' || s.flags.wheelDocked !== false) w.placeBikeDocked();
     if (floor === 1 && !s.flags.wheelDocked) { w.placeBikeHeld([0.2, EYE, EV_Z + 0.4], 0); }
@@ -1333,6 +1480,8 @@ export class Game {
     this.fx.setWarning(s.warningArmed);
     this.persist();
     this.fx.applyMood();
+    this.fx.arrive(floor);
+    this.enc.arrive(floor);
     this.mode = 'world';
     this.outsideZone = null;
     this.ui.fadeInstant(1); this.ui.fade(0, 900);
@@ -1380,17 +1529,17 @@ export class Game {
     const careLoad = this.loadCaretaker();
     if (w.doorState !== 'closed') { this.ui.caption(L('［扉が閉まる］', '[Doors close]')); this.audio.play('elevator_close'); await w.closeDoors(); }
     if (ses !== this.session) return;
-    // the car climbs back to 5F
+    // the car climbs back to the top floor
     this.camTo([0, EYE, EV_Z - 0.05], quatYawPitch(0, 0));
     this.audio.loop('elevator_motor_loop', 1.2, 0.2); this.ui.caption(L('［上昇している］', '[It\'s going up]'), 2600);
     w.setPanelDisplay('');
     const from = w.floor;
-    for (let f = from; f <= 5; f++) { w.setIndicator(String(f), f < 5 ? '▲' : ''); this.ui.setFloor(`${f}F`); await this.wait(from === 5 ? 1.2 : 0.7); if (ses !== this.session) return; }
+    for (let f = from; f <= TOP; f++) { w.setIndicator(String(f), f < TOP ? '▲' : ''); this.ui.setFloor(`${f}F`); await this.wait(from === TOP ? 1.2 : 0.42); if (ses !== this.session) return; }
     let loaded = true;
     try { await careLoad; } catch { loaded = false; }
     if (ses !== this.session) return;
-    this.setFloor(5);
-    w.setIndicator('5');
+    this.setFloor(TOP);
+    w.setIndicator(String(TOP));
     if (!loaded || !this.caretaker) {
       // model unavailable (network): keep the outcome, skip the figure
       this.audio.stopLoop('elevator_motor_loop', 0.3);
@@ -1463,7 +1612,7 @@ export class Game {
     this.showGameOver();
   }
 
-  private showGameOver() {
+  showGameOver(line?: string) {
     this.mode = 'cutscene';
     this.fovTarget = 65; this.fovSpeed = 50;
     this.audio.stopAllLoops(0.4);
@@ -1475,7 +1624,8 @@ export class Game {
       onNew: () => this.startNewGame(),
       onTitle: () => this.showTitle(),
       onShare: () => this.share('fail'),
-      reached: L(`${f}Ｆで失敗　／　突破 ${5 - f}／4フロア　／　誤答 ${this.save.wrongTotal}回`, `Failed on ${f}F  /  ${5 - f} of 4 floors cleared  /  ${this.save.wrongTotal} wrong answer${this.save.wrongTotal === 1 ? '' : 's'}`),
+      reached: L(`${f}Ｆで失敗　／　突破 ${TOP - f}／${FLOORS_TO_CLEAR}フロア　／　誤答 ${this.save.wrongTotal}回`, `Failed on ${f}F  /  ${TOP - f} of ${FLOORS_TO_CLEAR} floors cleared  /  ${this.save.wrongTotal} wrong answer${this.save.wrongTotal === 1 ? '' : 's'}`),
+      line,
     });
     this.ui.bigLine(null);
   }
@@ -1500,7 +1650,7 @@ export class Game {
   private inspectExit() {
     const s = this.save;
     if (s.phase === 'EXIT') { this.ui.toast(this.world.bikeMode === 'held' ? L('外の風が入ってくる。', 'Wind blows in from outside.') : L('自転車を置いていけない。', 'You can\'t leave your bicycle.')); return; }
-    this.ui.toast(L('５階の自転車を取りに来たのだ。', 'You came for your bicycle on 5F.'));
+    this.ui.toast(L(`${TOP}階の自転車を取りに来たのだ。`, `You came for your bicycle on ${TOP}F.`));
   }
 
   private async startEnding() {
@@ -1661,6 +1811,7 @@ export class Game {
       },
       onView: (id) => {
         if (id === 'memo') { this.ui.close('tools'); this.openMemo(); return; }
+        if (id === 'rules') { this.showNightRules(() => {}); return; }
         if (id === 'receipt') this.viewReceipt(); else this.ui.dialog({ title: ITEM_INFO[id].name, body: ITEM_INFO[id].desc, actions: [{ label: S.close, primary: true, onSelect: () => this.ui.close('dialog') }], onClose: () => this.ui.close('dialog') });
       },
       onClose: () => this.ui.close('tools'),
@@ -1733,7 +1884,7 @@ export class Game {
         const powered = !['BLACKOUT', 'LOCKED'].includes(s.phase);
         this.audio.loop('garage_air_loop', outside ? 0.35 : 1);
         if (w.floor === 1) this.audio.loop('outdoor_air_loop', outside ? 1.2 : 0.4);
-        else if (w.floor === 5 && powered) this.audio.loop('outdoor_air_loop', 0.25);
+        else if (w.floor === TOP && powered) this.audio.loop('outdoor_air_loop', 0.25);
         else if (w.floor === 2) this.audio.loop('outdoor_air_loop', 0.55);
         else this.audio.stopLoop('outdoor_air_loop');
       }
@@ -1741,12 +1892,12 @@ export class Game {
     if (this.mode !== 'world') return;
     // intro: entering 1F, getting in the car
     if (s.phase === 'INTRO' || s.phase === 'PAID') {
-      if (this.introStage === 'outside' && this.pos[2] > -6.6) { this.introStage = '1F'; this.ui.toast(L('１Ｆ。エレベーターで５階へ。', '1F. Take the elevator to 5F.'), 2600); }
+      if (this.introStage === 'outside' && this.pos[2] > -6.6) { this.introStage = '1F'; this.ui.toast(L(`１Ｆ。エレベーターで${TOP}階へ。`, `1F. Take the elevator to ${TOP}F.`), 2600); }
       if (w.floor === 1 && w.doorState === 'open' && w.isInsideCar(this.pos) && !this.ui.isOpen() && this.introStage === '1F' && !this.hintShown.key) {
-        this.hintShown.key = true; this.ui.toast(L('操作盤で５を押す。', 'Press 5 on the control panel.'), 2400);
+        this.hintShown.key = true; this.ui.toast(this.ui.touch ? L(`操作盤で${TOP}を押す。`, `Press ${TOP} on the control panel.`) : L(`操作盤で${TOP}を押す（数字キーなら 0）。`, `Press ${TOP} on the control panel (number key 0).`), 2800);
       }
-      // 5F: doors close on their own once the player walks away
-      if (w.floor === 5 && w.doorState === 'open' && !w.isInsideCar(this.pos)) {
+      // top floor: doors close on their own once the player walks away
+      if (w.floor === TOP && w.doorState === 'open' && !w.isInsideCar(this.pos)) {
         if (this.leftCarAt < 0) this.leftCarAt = this.time;
         if (this.time - this.leftCarAt > 4 && this.pos[2] < EV_Z - 2.5) { this.leftCarAt = -1; this.audio.play('elevator_close', { gain: 0.7 }); w.closeDoors(); }
       } else this.leftCarAt = -1;
@@ -1766,8 +1917,8 @@ export class Game {
       this.flavorT -= dt;
       if (this.flavorT <= 0) {
         this.flavorT = 12 + Math.random() * 10;
-        if (w.floor === 4) this.audio.play('bicycle_roll_loop', { gain: 0.35, rate: 0.8, pan: (Math.random() - 0.5) * 0.8 });
-        if (w.floor === 3) this.audio.play('footstep_left', { gain: 0.18, rate: 0.75, pan: 0.6 });
+        if (w.floor === 9) this.audio.play('bicycle_roll_loop', { gain: 0.35, rate: 0.8, pan: (Math.random() - 0.5) * 0.8 });
+        if (w.floor === 6 || w.floor === 4) this.audio.play('footstep_left', { gain: 0.18, rate: 0.75, pan: 0.6 });
       }
     }
     // 1F exit
@@ -1785,7 +1936,7 @@ export class Game {
     const g = this;
     return {
       game: g,
-      state: () => ({ phase: g.save?.phase, floor: g.world.floor, mode: g.mode, view: g.view, wrongTotal: g.save?.wrongTotal, warningArmed: g.save?.warningArmed, hasFailed: g.save?.hasFailed, doors: g.world.doorState, bike: g.world.bikeMode, pos: g.pos.map((v) => +v.toFixed(2)), yaw: +g.yaw.toFixed(2), target: g.current?.id ?? null, ui: g.ui.stack.map((o) => o.name), held: g.heldItem, flags: g.save?.flags, drawCalls: g.renderer.drawCalls, tris: g.renderer.triangles, fps: +g.fps.toFixed(1) }),
+      state: () => ({ encounter: g.enc.active, cleared: g.save?.cleared, choice: g.ui.isOpen('choice'), phase: g.save?.phase, floor: g.world.floor, mode: g.mode, view: g.view, wrongTotal: g.save?.wrongTotal, warningArmed: g.save?.warningArmed, hasFailed: g.save?.hasFailed, doors: g.world.doorState, bike: g.world.bikeMode, pos: g.pos.map((v) => +v.toFixed(2)), yaw: +g.yaw.toFixed(2), target: g.current?.id ?? null, ui: g.ui.stack.map((o) => o.name), held: g.heldItem, flags: g.save?.flags, drawCalls: g.renderer.drawCalls, tris: g.renderer.triangles, fps: +g.fps.toFixed(1) }),
       tp: (x: number, z: number, yaw: number) => { g.pos = [x, EYE, z]; g.yaw = yaw; if (g.world.bikeMode === 'held') g.world.placeBikeHeld(g.pos, g.yaw); },
       answer: () => g.puzzleFor(g.world.floor)?.answer,
       seed: (n: number) => { g.forcedSeed = n; },
@@ -1796,10 +1947,12 @@ export class Game {
       advance: (sec: number) => new Promise<void>((res) => { g.dbgBudget += sec; const chk = () => (g.dbgBudget <= 1e-6 ? requestAnimationFrame(() => res()) : requestAnimationFrame(chk)); chk(); }),
       noAdapt: () => { g.adaptEnabled = false; g.renderer.dynamicScale = 1; },
       fx: () => g.fx,
+      enc: () => g.enc,
       jump: (floor: number) => {
         const s = g.save;
         s.flags = { bikeUnlocked: true, paid: true, receiptAuth: true, wheelDocked: true, authenticated: true, memoUnlocked: true };
-        s.items = ['key', 'light', 'receipt'];
+        s.items = ['key', 'light', 'receipt', 'rules'];
+        s.cleared ||= {};
         s.currentFloor = floor; s.resumeFloor = floor; s.phase = floor === 1 ? 'EXIT' : 'EXPLORE';
         g.ui.closeAll(); g.ui.showHud(true); g.ui.bigLine(null);
         g.arriveInstant(floor);

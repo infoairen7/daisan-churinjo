@@ -1,7 +1,7 @@
 // HTML HUD and overlays. Keyboard: W/S/A/D or arrows move focus, Space/Enter select, Esc close.
 // Touch: selection items need a double tap (same item, ≤320 ms, ≤20 px); nav buttons are single taps.
 import { UI } from './ui_assets.gen';
-import type { FloorPuzzle } from './puzzle';
+import { type FloorPuzzle, TOP_FLOOR, MY_SPACE } from './puzzle';
 import type { Bike } from './puzzle';
 import type { MemoEntry, Settings, Records } from './save';
 import { L, isEn, GAME_TITLE, clueText, colorLabel, shapeLabel, typeLabel, rowLabel, basketLabel } from './i18n';
@@ -34,8 +34,9 @@ export const S = new Proxy(S_JA, { get: (t, k) => (isEn() ? (S_EN as any)[k] : (
 interface ItemInfo { name: string; icon: string; desc: string; usable: boolean }
 const itemInfo = (id: string): ItemInfo => {
   switch (id) {
-    case 'key': return { name: L('自転車の鍵', 'Bike key'), icon: 'key', desc: L('517番の自転車の鍵。後輪の錠を外せる。', 'The key to bicycle 517. It opens the rear wheel lock.'), usable: true };
-    case 'receipt': return { name: L('精算済票', 'Paid receipt'), icon: 'receipt', desc: L('５Ｆの精算機で受け取った票。保管階５Ｆ、保管番号517。', 'From the 5F payment machine. Floor 5F, space 517.'), usable: true };
+    case 'key': return { name: L('自転車の鍵', 'Bike key'), icon: 'key', desc: L(`${MY_SPACE}番の自転車の鍵。後輪の錠を外せる。`, `The key to bicycle ${MY_SPACE}. It opens the rear wheel lock.`), usable: true };
+    case 'receipt': return { name: L('精算済票', 'Paid receipt'), icon: 'receipt', desc: L(`${TOP_FLOOR}Ｆの精算機で受け取った票。保管階${TOP_FLOOR}Ｆ、保管番号${MY_SPACE}。`, `From the ${TOP_FLOOR}F payment machine. Floor ${TOP_FLOOR}F, space ${MY_SPACE}.`), usable: true };
+    case 'rules': return { name: L('夜間利用の注意', 'Night rules'), icon: 'warning', desc: L('精算機から票と一緒に出てきた紙。夜間に守ることが書いてある。', 'A slip that came out of the payment machine with the receipt. Rules for the night.'), usable: false };
     case 'light': return { name: L('スマホライト', 'Phone light'), icon: 'light', desc: L('手元を照らす。電池は気にしなくていい。', 'Lights up what\'s in front of you. The battery is fine.'), usable: true };
     default: return { name: L('観察メモ', 'Notes'), icon: 'note', desc: L('調べた自転車の色・種類・前カゴを記録する。台数は数えてくれない。', 'Records the color, type and basket of each bicycle you inspect. It won\'t count them for you.'), usable: true };
   }
@@ -161,7 +162,7 @@ export class GameUI {
     }
     if (type === 'digit' && digit) {
       const b = top.el.querySelector<HTMLElement>(`[data-digit="${digit}"]`);
-      if (b) { this.focus(b); this.activate(b); }
+      if (b && !b.hidden && !(b as HTMLButtonElement).disabled) { this.focus(b); this.activate(b); }
       return true;
     }
     if (type === 'backspace') {
@@ -282,15 +283,17 @@ export class GameUI {
   }
 
   // ------------------------------------------------------------- title
-  showTitle(opts: { canContinue: boolean; records: Records; storageOk: boolean }, h: { onNew: Handler; onContinue: Handler; onSettings: Handler; onHelp: Handler; onLang: Handler }) {
+  showTitle(opts: { canContinue: boolean; records: Records; storageOk: boolean; demo?: boolean }, h: { onNew: Handler; onContinue: Handler; onSettings: Handler; onHelp: Handler; onLang: Handler; onDemo?: Handler }) {
     const r = opts.records;
     const el = this.open('title', `
       <div class="title-wrap">
         <img class="title-lockup" src="${UI.title_lockup}" alt="${esc(GAME_TITLE())}">
         ${isEn() ? '<p class="title-en">BICYCLE PARKING No.3</p>' : ''}
-        <p class="title-sub">${L('深夜23時。５階から自転車を降ろすだけのはずだった。', '11 p.m. All I had to do was bring my bike down from the fifth floor.')}</p>
+        <p class="title-sub">${L('深夜23時。10階から自転車を降ろすだけのはずだった。', '11 p.m. All I had to do was bring my bike down from the tenth floor.')}</p>
+        ${opts.demo ? `<p class="demo-tag">${L('v2 デモ版　10階建て・管理人との遭遇', 'v2 DEMO  ·  ten floors, caretaker encounters')}</p>` : ''}
         <div class="menu">
           <button class="btn primary" data-act="new">${S.newGame}</button>
+          ${opts.demo ? `<button class="btn" data-act="demo">${L('デモ：場面を選ぶ', 'Demo: choose a scene')}</button>` : ''}
           <button class="btn" data-act="cont" ${opts.canContinue ? '' : 'disabled'}>${S.cont}</button>
           <button class="btn" data-act="settings">${S.settings}</button>
           <button class="btn" data-act="help">${L('操作方法', 'Controls')}</button>
@@ -307,6 +310,7 @@ export class GameUI {
     this.bind(el.querySelector('[data-act=settings]'), h.onSettings);
     this.bind(el.querySelector('[data-act=help]'), h.onHelp);
     this.bind(el.querySelector('[data-act=lang]'), h.onLang);
+    if (h.onDemo) this.bind(el.querySelector('[data-act=demo]'), h.onDemo);
     this.focus(el.querySelector<HTMLElement>(opts.canContinue ? '[data-act=cont]' : '[data-act=new]'));
   }
 
@@ -406,8 +410,8 @@ export class GameUI {
       const info = ITEM_INFO[id];
       const viewLabel = id === 'memo' ? L('開く', 'Open') : L('見る', 'View');
       detail.innerHTML = `<h3>${icon(info.icon)}${info.name}</h3><p>${info.desc}</p>
-        <div class="row left">${id !== 'memo' ? `<button class="btn primary" data-dbl data-use>${id === 'light' ? L('点ける／消す', 'On / off') : S.use}</button>` : ''}
-        ${id === 'receipt' || id === 'memo' || id === 'key' ? `<button class="btn" data-dbl data-view>${viewLabel}</button>` : ''}</div>`;
+        <div class="row left">${id !== 'memo' && id !== 'rules' ? `<button class="btn primary" data-dbl data-use>${id === 'light' ? L('点ける／消す', 'On / off') : S.use}</button>` : ''}
+        ${id === 'receipt' || id === 'memo' || id === 'key' || id === 'rules' ? `<button class="btn ${id === 'rules' ? 'primary' : ''}" data-dbl data-view>${id === 'rules' ? L('読む', 'Read') : viewLabel}</button>` : ''}</div>`;
       this.bind(detail.querySelector('[data-use]'), () => h.onUse(id));
       this.bind(detail.querySelector('[data-view]'), () => h.onView(id));
       this.focus(detail.querySelector<HTMLElement>('[data-use]') || detail.querySelector<HTMLElement>('[data-view]'));
@@ -445,6 +449,7 @@ export class GameUI {
           <div class="pad-head"><span class="pad-title"></span><span class="amber pad-floor"></span><button class="icon-btn" data-close aria-label="${S.close}">${icon('close')}</button></div>
           <div class="pad-display"><span class="pad-label">${L('入力', 'Input')}</span><span class="pad-digits" aria-live="polite"></span></div>
           <div class="pad-msg" aria-live="assertive"></div>
+          <div class="pad-hi">${[10, 9, 8, 7, 6].map((d) => `<button class="btn key hi" data-dbl data-digit="${d}">${d}</button>`).join('')}</div>
           <div class="pad-grid">
             <button class="btn key" data-dbl data-digit="5">5</button><button class="btn key" data-dbl data-digit="4">4</button>
             <button class="btn key" data-dbl data-digit="3">3</button><button class="btn key" data-dbl data-digit="2">2</button>
@@ -453,7 +458,7 @@ export class GameUI {
           </div>
         </section>
       </div>`, { onClose: h.onClose, cls: 'ov-panel' });
-    for (let d = 1; d <= 5; d++) this.bind(el.querySelector(`[data-digit="${d}"]`), () => h.onDigit(d));
+    for (let d = 1; d <= 10; d++) this.bind(el.querySelector(`[data-digit="${d}"]`), () => h.onDigit(d));
     this.bind(el.querySelector('[data-clear]'), h.onClear);
     this.bind(el.querySelector('[data-open]'), h.onOpen);
     this.bind(el.querySelector('[data-reinspect]'), h.onReinspect);
@@ -469,6 +474,7 @@ export class GameUI {
     const foot = el.querySelector<HTMLElement>('.panel-foot')!;
     const re = el.querySelector<HTMLElement>('[data-reinspect]')!;
     el.querySelector('.pad-title')!.textContent = m.mode === 'normal' ? L('操作盤', 'Control panel') : L('運搬照合盤', 'Check panel');
+    el.querySelectorAll<HTMLElement>('.btn.key.hi').forEach((b) => { b.hidden = m.mode !== 'normal'; });
     el.querySelector('.pad-floor')!.textContent = `${m.floor}F`;
     el.querySelector('.pad-label')!.textContent = m.mode === 'normal' ? L('行先階', 'Floor') : m.mode === 'dead' ? L('停止中', 'Stopped') : L('入力', 'Input');
     el.querySelector<HTMLElement>('[data-clear]')!.setAttribute('aria-label', m.mode === 'normal' ? L('閉（扉を閉める）', 'CLOSE (close the doors)') : L('閉（入力を消去）', 'CLOSE (clear input)'));
@@ -485,6 +491,11 @@ export class GameUI {
         ${m.warning ? `<p class="warn-text">${icon('warning')}${L('警告中：次の誤答で管理人が来る', 'WARNING: one more wrong answer brings the caretaker')}</p>` : ''}`;
       foot.textContent = L('「閉」で消去　／　「開」で照合', 'CLOSE clears  /  OPEN checks');
       re.hidden = false;
+    } else if (m.mode === 'auth' && !m.puzzle) {
+      // v2: a floor without a checklist (the caretaker's floors)
+      card.innerHTML = `<div class="clue-title"><h2>${m.passTitle || L('照合なし', 'No checklist')}</h2></div><p class="muted">${m.passText || ''}</p>`;
+      foot.textContent = '';
+      re.hidden = true;
     } else if (m.mode === 'normal') {
       card.innerHTML = `<div class="clue-title"><h2>${L('行先階', 'Destination')}</h2></div><p class="muted">${L('数字で行先階を選ぶ。「開」「閉」は扉の開閉。', 'Choose a floor with the numbers. OPEN and CLOSE work the doors.')}</p>`;
       foot.textContent = '';
@@ -495,7 +506,8 @@ export class GameUI {
       re.hidden = true;
     }
     const digits = el.querySelector<HTMLElement>('.pad-digits')!;
-    if (m.mode === 'auth' && m.puzzle) {
+    if (m.mode === 'auth' && !m.puzzle) digits.innerHTML = '<i>－</i>';
+    else if (m.mode === 'auth' && m.puzzle) {
       const slots = [];
       for (let i = 0; i < m.puzzle.codeLength; i++) slots.push(m.input[i] !== undefined ? `<b>${m.input[i]}</b>` : '<i>＿</i>');
       digits.innerHTML = slots.join('');
@@ -559,10 +571,10 @@ export class GameUI {
   }
 
   // ------------------------------------------------------------- endings
-  gameOver(h: { onRetry: Handler; onNew: Handler; onTitle: Handler; onShare: Handler; reached: string }) {
+  gameOver(h: { onRetry: Handler; onNew: Handler; onTitle: Handler; onShare: Handler; reached: string; line?: string }) {
     const el = this.open('gameover', `
       <div class="go-wrap">
-        <p class="go-line">${S.failed}</p>
+        <p class="go-line">${esc(h.line || S.failed)}</p>
         <p class="muted small">${esc(h.reached)}</p>
         <div class="menu">
           <button class="btn primary" data-act="retry">${S.retry}</button>
@@ -617,6 +629,39 @@ export class GameUI {
     try { document.title = GAME_TITLE(); } catch { /* ignore */ }
   }
 
+  // ------------------------------------------------------------- v2: the caretaker speaks / you must choose
+  /** A line of speech, lower third (kept even with subtitles off: it is the scene, not a sound cue). */
+  say(text: string | null, ms = 2600, who = '') {
+    const el = this.root.querySelector<HTMLElement>('#say')!;
+    window.clearTimeout(this.sayTimer);
+    if (!text) { el.classList.remove('is-in'); return; }
+    el.innerHTML = `${who ? `<span class="who">${esc(who)}</span>` : ''}<span class="line">${esc(text)}</span>`;
+    el.hidden = false; void el.offsetWidth; el.classList.add('is-in');
+    if (ms > 0) this.sayTimer = window.setTimeout(() => el.classList.remove('is-in'), ms);
+  }
+  private sayTimer = 0;
+
+  /** Timed choice. The countdown is driven by the game clock through the returned handle. */
+  choice(o: { prompt: string; who?: string; options: { id: string; label: string }[]; onPick: (id: string) => void }) {
+    const el = this.open('choice', `
+      <div class="choice-wrap" role="group" aria-label="${esc(o.prompt)}">
+        <p class="choice-prompt ${o.who ? 'spoken' : ''}">${o.who ? `<span class="who">${esc(o.who)}</span>` : ''}${esc(o.prompt)}</p>
+        <div class="choice-timer" aria-hidden="true"><i></i></div>
+        <div class="menu">${o.options.map((op, i) => `<button class="btn choice" data-dbl data-digit="${i + 1}" data-i="${i}"><kbd>${i + 1}</kbd><span>${esc(op.label)}</span></button>`).join('')}</div>
+        <p class="muted small choice-help">${this.touch ? L('ダブルタップで選ぶ', 'Double-tap to choose') : L('W／S で選び、SPACE で決める（数字キーでも可）', 'W/S to move, SPACE to choose (or a number key)')}</p>
+      </div>`, { cls: 'ov-choice', modal: true });
+    let done = false;
+    o.options.forEach((op, i) => this.bind(el.querySelector(`[data-i="${i}"]`), () => { if (done) return; done = true; this.close('choice'); o.onPick(op.id); }));
+    this.focus(el.querySelector<HTMLElement>('[data-i="0"]'));
+    const bar = el.querySelector<HTMLElement>('.choice-timer i')!;
+    return {
+      /** remaining 1 → 0 */
+      progress: (r: number) => { bar.style.transform = `scaleX(${Math.max(0, r)})`; el.classList.toggle('is-late', r < 0.34); },
+      close: () => { if (done) return; done = true; this.close('choice'); },
+      get done() { return done; },
+    };
+  }
+
   /** When the X window cannot be opened from here (popup blocked), show the text and a link instead. */
   shareFallback(text: string, url: string) {
     const el = this.dialog({
@@ -646,6 +691,9 @@ export interface PanelModel {
   message?: string;
   messageWarn?: boolean;
   locked?: boolean;
+  /** v2: what the panel says on a floor without a checklist */
+  passTitle?: string;
+  passText?: string;
 }
 export interface PanelHandlers { onDigit: (d: number) => void; onClear: Handler; onOpen: Handler; onReinspect: Handler; onClose: Handler }
 

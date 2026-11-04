@@ -198,7 +198,9 @@ export class AudioManager {
     if (!ctx || !buf || !def) return;
     // no unbounded stacking of the same cue
     const prev = this.lastPlay.get(id);
-    if (prev && ctx.currentTime - prev.t < 0.06) return;
+    const when = ctx.currentTime + (opts.delay ?? 0);
+    // compare scheduled times, so a run of delayed footsteps is not swallowed by the first one
+    if (prev && Math.abs(when - prev.t) < 0.06) return;
     if (prev && opts.restart) { try { prev.src.stop(); } catch { /* ignore */ } }
     const src = ctx.createBufferSource();
     src.buffer = buf;
@@ -211,7 +213,6 @@ export class AudioManager {
       const p = ctx.createStereoPanner(); p.pan.value = opts.pan; node.connect(p); node = p;
     }
     src.connect(g); node.connect(this.sfxBus!);
-    const when = ctx.currentTime + (opts.delay ?? 0);
     src.start(when);
     this.lastPlay.set(id, { src, t: when });
   }

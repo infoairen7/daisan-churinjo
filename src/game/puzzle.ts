@@ -84,8 +84,16 @@ export const COLOR_SHAPE: Record<Color, string> = { red: '丸', blue: '三角', 
 export const COLOR_SYMBOL: Record<Color, string> = { red: '○', blue: '△', cream: '□' };
 export const TYPE_LABEL: Record<BikeType, string> = { city: 'シティ車', sport: 'スポーツ車', folding: '小径折畳車' };
 
-export const FLOOR_ORDER = [5, 4, 3, 2];
+/** v2: a ten-storey garage. Floors with a checklist, top to bottom… */
+export const FLOOR_ORDER = [10, 9, 7, 6, 4, 2];
+/** …and the floors where the caretaker is met instead (no checklist; a choice decides). */
+export const ENCOUNTER_FLOORS = [8, 5, 3];
+export const TOP_FLOOR = 10;
+/** The player's own space on the top floor (printed on the paid receipt). */
+export const MY_SPACE = '1017';
 export const MAX_ATTEMPTS = 256;
+export const isPuzzleFloor = (f: number) => FLOOR_ORDER.includes(f);
+export const isEncounterFloor = (f: number) => ENCOUNTER_FLOORS.includes(f);
 
 // ---------------------------------------------------------------- seeded RNG
 export function mulberry32(seed: number): () => number {
@@ -189,9 +197,10 @@ export function generateFloor(
 
 export function generateRun(seed: number, firstRun: boolean): RunData {
   const rng = mulberry32(seed);
+  // first night: a gentle climb (10F easy … 2F hard); later nights: any order
   const tiers: Tier[] = firstRun
-    ? ['easy', ...shuffle(rng, ['normal', 'normal', 'hard'] as Tier[])]
-    : shuffle(rng, ['easy', 'normal', 'normal', 'hard'] as Tier[]);
+    ? ['easy', 'normal', 'normal', 'hard', 'normal', 'hard']
+    : shuffle(rng, ['easy', 'normal', 'normal', 'normal', 'hard', 'hard'] as Tier[]);
   const used = new Set<string>();
   const floors = FLOOR_ORDER.map((floor, i) => generateFloor(rng, seed, floor, tiers[i], used));
   return { schemaVersion: 1, seed, firstRun, tiers, floors };
@@ -207,7 +216,7 @@ export function newSeed(): number {
 
 // ---------------------------------------------------------------- grading & progress
 export interface Progress {
-  currentFloor: number; // floor the car is at (5..1)
+  currentFloor: number; // floor the car is at (10..1)
   resumeFloor: number; // floor to restart from after a failure
   wrongTotal: number;
   warningArmed: boolean;

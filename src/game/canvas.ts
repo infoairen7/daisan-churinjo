@@ -189,3 +189,114 @@ export function grimeTexture(seed = 3, base = 200): HTMLCanvasElement {
   }
   return c;
 }
+
+// ---------------------------------------------------------------- v2 (ten storeys)
+/** Floor sign in the pack's style (plum plate, big floor number, amber rule, 運搬口) — for floors the pack has no PNG for. */
+export function floorSign(floor: number, en = false): HTMLCanvasElement {
+  const [c, g] = canvas(400, 240);
+  g.fillStyle = '#62505A';
+  g.beginPath(); (g as any).roundRect ? (g as any).roundRect(0, 0, 400, 240, 12) : g.rect(0, 0, 400, 240); g.fill();
+  g.textBaseline = 'alphabetic'; g.fillStyle = '#F0EBDD';
+  g.font = `400 24px ${FONT}`; g.fillText(en ? 'Bicycle Parking No.3' : '第３駐輪場', 34, 60);
+  const num = String(floor);
+  g.font = `500 ${num.length > 1 ? 104 : 118}px ${FONT}`; g.fillText(num, 30, 186);
+  const w = g.measureText(num).width;
+  g.font = `400 54px ${FONT}`; g.fillText('F', 30 + w + 30, 184);
+  g.strokeStyle = '#E9B96E'; g.lineWidth = 3; g.beginPath(); g.moveTo(260, 90); g.lineTo(355, 90); g.stroke();
+  g.font = `400 24px ${FONT}`; g.fillText(en ? 'Transport' : '運搬口', 262, 140);
+  return c;
+}
+
+/** Paid receipt (the pack's artwork, redrawn so the floor and space can change). */
+export function receipt(floor: number, space: string, en = false): HTMLCanvasElement {
+  const [c, g] = canvas(360, 580);
+  g.fillStyle = '#E9E3D3'; g.fillRect(0, 0, 360, 580);
+  g.strokeStyle = '#8f8778'; g.lineWidth = 3; g.strokeRect(1.5, 1.5, 357, 577);
+  g.textBaseline = 'alphabetic'; g.fillStyle = '#2b2a2e';
+  const wide = (s: string) => s.replace(/[0-9]/g, (d) => String.fromCharCode(d.charCodeAt(0) + 0xfee0)).replace(/:/g, '：').replace(/F/g, 'Ｆ');
+  if (en) {
+    g.font = `700 25px ${FONT}`; g.fillText('Bicycle Parking No.3', 30, 58);
+    g.font = `400 19px ${FONT}`; g.fillText('PAID RECEIPT', 30, 96);
+  } else {
+    g.font = `700 27px ${FONT}`; g.fillText('第３駐輪場', 30, 58);
+    g.font = `400 19px ${FONT}`; g.fillText('精算済票', 30, 100);
+  }
+  g.strokeStyle = '#9b9384'; g.lineWidth = 1.5; g.beginPath(); g.moveTo(30, 124); g.lineTo(328, 124); g.stroke();
+  g.font = `400 18px ${FONT}`;
+  const rows: [string, string][] = en
+    ? [['Floor', `${floor}F`], ['Space', space], ['Fee', '¥200'], ['Paid at', '23:07']]
+    : [['保管階', wide(`${floor}F`)], ['保管番号', wide(space)], ['料金', '２００円'], ['精算時刻', wide('23:07')]];
+  rows.forEach(([k, v], i) => { g.fillText(k, 30, 172 + i * 40); g.fillText(v, en ? 140 : 122, 172 + i * 40); });
+  g.font = `400 16px ${FONT}`;
+  if (en) {
+    g.fillText('Keep this receipt until you leave.', 30, 344);
+    g.fillText('Insert into the transport reader', 30, 392);
+    g.fillText('and set your front wheel on the rail.', 30, 420);
+    g.font = `700 34px ${FONT}`; g.fillText('PAID', 30, 522);
+  } else {
+    g.font = `400 17px ${FONT}`;
+    g.fillText('退場まで保管してください', 30, 346);
+    g.fillText('運搬認証口に票を通し、', 30, 398);
+    g.fillText('前輪をレールへ合わせる。', 30, 432);
+    g.font = `700 32px ${FONT}`; g.fillText('精算済', 30, 520);
+  }
+  g.strokeStyle = '#2b2a2e'; g.lineWidth = 3; g.lineCap = 'round'; g.beginPath(); g.moveTo(236, 488); g.lineTo(262, 516); g.lineTo(306, 470); g.stroke();
+  return c;
+}
+
+/** A number scratched into the paint over and over (7F wall). */
+export function scrawl(text: string, seed = 5): HTMLCanvasElement {
+  const [c, g] = canvas(1024, 512);
+  let a = seed >>> 0; const rnd = () => { a = (a * 1664525 + 1013904223) >>> 0; return a / 4294967296; };
+  g.clearRect(0, 0, 1024, 512);
+  g.textAlign = 'center'; g.textBaseline = 'middle';
+  for (let i = 0; i < 26; i++) {
+    const x = 70 + rnd() * 884, y = 50 + rnd() * 412, s = 40 + rnd() * 70;
+    g.save(); g.translate(x, y); g.rotate((rnd() - 0.5) * 0.5); g.scale(1 + (rnd() - 0.5) * 0.3, 1);
+    g.font = `400 ${s}px ${FONT}`;
+    // scratched, not printed: a few thin, slightly offset strokes per number
+    const col = `rgba(${60 + rnd() * 30 | 0},${18 + rnd() * 10 | 0},${14 + rnd() * 8 | 0},`;
+    g.lineWidth = 1.5 + rnd() * 1.5;
+    for (let k = 0; k < 3; k++) {
+      g.strokeStyle = col + (0.35 + rnd() * 0.35) + ')';
+      g.strokeText(text, (rnd() - 0.5) * 3, (rnd() - 0.5) * 3);
+    }
+    g.restore();
+  }
+  // one bigger, newer line
+  g.save(); g.translate(512, 270); g.rotate(-0.04); g.font = `500 150px ${FONT}`; g.lineWidth = 4;
+  for (let k = 0; k < 4; k++) { g.strokeStyle = `rgba(92,20,16,${0.45 + rnd() * 0.3})`; g.strokeText(text, (rnd() - 0.5) * 4, (rnd() - 0.5) * 4); }
+  g.restore();
+  return c;
+}
+
+/** Smeared palm print (alpha). */
+export function handprint(seed = 1): HTMLCanvasElement {
+  const [c, g] = canvas(256, 320);
+  let a = seed >>> 0; const rnd = () => { a = (a * 1664525 + 1013904223) >>> 0; return a / 4294967296; };
+  g.clearRect(0, 0, 256, 320);
+  // pale, greasy smears read on dark steel better than dark ink
+  const ink = (al: number) => `rgba(214,206,192,${al})`;
+  g.fillStyle = ink(0.75);
+  g.beginPath(); g.ellipse(128, 210, 62, 74, 0, 0, Math.PI * 2); g.fill();
+  const fingers: [number, number, number, number][] = [[62, 120, 15, 52], [100, 92, 15, 64], [140, 88, 15, 68], [178, 104, 14, 58], [214, 186, 14, 46]];
+  fingers.forEach(([x, y, rx, ry], i) => { g.save(); g.translate(x, y); g.rotate(i === 4 ? 0.9 : (i - 1.5) * 0.12); g.beginPath(); g.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2); g.fill(); g.restore(); });
+  // drag marks downward
+  for (let i = 0; i < 6; i++) { g.fillStyle = ink(0.18 + rnd() * 0.2); g.fillRect(80 + rnd() * 100, 250 + rnd() * 20, 6 + rnd() * 8, 30 + rnd() * 40); }
+  // speckle the edges so it reads as a print, not a shape
+  g.globalCompositeOperation = 'destination-out';
+  for (let i = 0; i < 900; i++) { g.fillStyle = `rgba(0,0,0,${rnd() * 0.6})`; g.fillRect(rnd() * 256, rnd() * 320, 2 + rnd() * 3, 2 + rnd() * 3); }
+  return c;
+}
+
+/** Wet shoe print (alpha), toe at the top. */
+export function footprint(): HTMLCanvasElement {
+  const [c, g] = canvas(128, 256);
+  g.clearRect(0, 0, 128, 256);
+  g.fillStyle = 'rgba(10,12,14,0.8)';
+  g.beginPath(); g.ellipse(64, 78, 40, 66, 0, 0, Math.PI * 2); g.fill();
+  g.beginPath(); g.ellipse(64, 200, 32, 40, 0, 0, Math.PI * 2); g.fill();
+  g.globalCompositeOperation = 'destination-out';
+  for (let i = 0; i < 9; i++) { g.fillStyle = 'rgba(0,0,0,0.5)'; g.fillRect(28, 40 + i * 9, 72, 3); }
+  return c;
+}

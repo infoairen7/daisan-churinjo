@@ -1,10 +1,10 @@
 // localStorage wrapper. Every access is guarded: private windows, previews and blocked
 // storage must not break the game (spec §16: continue in-session and tell the player once).
-import type { FloorPuzzle } from './puzzle';
+import { type FloorPuzzle, FLOOR_ORDER } from './puzzle';
 
 export type Phase =
   | 'INTRO' | 'PAID' | 'BLACKOUT' | 'LOCKED' | 'AUTHENTICATED' | 'EXPLORE' | 'INPUT' | 'WARNING'
-  | 'TRANSIT' | 'FAIL_REVEAL' | 'GAMEOVER' | 'EXIT' | 'NORMAL_END' | 'SECRET_END';
+  | 'TRANSIT' | 'FAIL_REVEAL' | 'GAMEOVER' | 'EXIT' | 'NORMAL_END' | 'SECRET_END' | 'ENCOUNTER';
 
 export interface MemoEntry { id: string; row: string; color: string; type: string; basket: boolean }
 
@@ -31,6 +31,10 @@ export interface SaveData {
   memo: Record<string, MemoEntry[]>;
   items: string[];
   savedAt: number;
+  /** v2: caretaker encounters survived this night (floor → true) */
+  cleared?: Record<string, boolean>;
+  /** v2: how many times the caretaker got you (wrong answers or wrong choices) */
+  failCount?: number;
 }
 
 export interface Settings {
@@ -97,7 +101,9 @@ function remove(key: string) {
 
 export function loadSave(): SaveData | null {
   const s = read<SaveData>(KEY_SAVE);
-  if (!s || s.version !== 1 || !Array.isArray(s.generatedFloors) || s.generatedFloors.length !== 4) return null;
+  // a save from the five-storey version (4 checklists) cannot be continued in the ten-storey one
+  if (!s || s.version !== 1 || !Array.isArray(s.generatedFloors) || s.generatedFloors.length !== FLOOR_ORDER.length) return null;
+  s.cleared ||= {};
   return s;
 }
 export function writeSave(s: SaveData) { s.savedAt = Date.now(); write(KEY_SAVE, s); }
