@@ -124,7 +124,8 @@ def find(shot, pred, default):
             return i
     return default
 
-k5 = find('kill5', lambda m: m['lunge'], 70)
+K5 = os.environ.get('PV_K5', 'kill5')
+k5 = find(K5, lambda m: m['lunge'], 70)
 o8 = find('open8', lambda m: m['lunge'], 40)
 SAID = os.environ.get('PV_SAID', '1071')
 
@@ -133,7 +134,7 @@ seg('shot', 96, shot='exterior', start=20, cap=('10階の自転車を、取り�
 seg('shot', 105, shot='ride10', start=45, cap=('誰も呼んでいない階で、止まる。', 'It stops on a floor nobody called.', 'bottom', 1.8, 3.45), bright=1.1)
 seg('shot', 30, shot='ride10', start=208, bright=1.1)
 seg('shot', 80, shot='dup7', start=35, cap=('通路の奥に、自分の自転車が停まっていた。', 'At the end of the aisle stood my own bike.', 'bottom', 0.2, 2.6), bright=1.25)
-seg('shot', 26, shot='scrawl7', start=30, flash=(0, 0.8, 4), bright=1.2)
+seg('shot', 26, shot='scrawl7', start=30, flash=(0, 0.8, 4), bright=1.6)
 seg('shot', 70, shot='hands4', start=20, cap=('扉を叩く音は、内側からだった。', 'The banging came from the inside.', 'bottom', 0.6, 2.3), bright=1.3)
 seg('black', 1.5 * FPS, cap=('間違えなくても、', 'Even if you get nothing wrong,', 'center', 0.15, 1.5))
 seg('black', 1.6 * FPS, cap=('管理人は、来る。', 'the caretaker comes.', 'center', 0.0, 1.6))
@@ -145,7 +146,7 @@ seg('black', 0.5 * FPS)
 seg('shot', 150, shot='ride5_open', start=20, cap=('止まるはずのない階で、乗ってくる。', 'He gets on where the car should never stop.', 'bottom', 2.4, 4.8), bright=1.2)
 seg('shot', 150, shot='ride5_turn', start=10, cap=('……何階ですか', '...Which floor?', 'top', 2.1, 3.65), bright=1.2, uilayer=('ui_choice5.png', 112))
 seg('shot', 120, shot='roll3', start=0, cap=(f'……{SAID}番の方ですね？', f"...You're number {SAID}, aren't you?", 'bottom', 1.9, 3.9), bright=1.15)
-seg('shot', k5 + 12 - max(0, k5 - 50), shot='kill5', start=max(0, k5 - 50), bright=1.1, pounce=k5 - max(0, k5 - 50))
+seg('shot', k5 + 12 - max(0, k5 - 50), shot=K5, start=max(0, k5 - 50), bright=1.1, pounce=k5 - max(0, k5 - 50))
 seg('black', 1.6 * FPS, cap=('選択を誤れば、そこで終わり。', 'Choose wrong, and that is where it ends.', 'center', 0.25, 1.55))
 seg('title', 5.6 * FPS)
 seg('shot', 100, shot='foot8', start=0, cap=('……誰かが、すぐ横を通っていった。', '...Someone walked right past you.', 'bottom', 0.9, 3.3), bright=1.25)
