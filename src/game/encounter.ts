@@ -137,14 +137,15 @@ export class Encounters {
       g.camTo(cam, quatLookDir(sub(eye, cam)), opts.quick ? 5 : 2);
       // a cold light from just above your eyes, so the face is what you see (not a silhouette against the car lamp)
       const fl = g.world.faceLight;
-      fl.position = [cam[0] + (eye[0] - cam[0]) * 0.3, eye[1] + 0.45, cam[2] + (eye[2] - cam[2]) * 0.3];
-      fl.intensity = 1.5;
+      // (it sits just above the lens, so the face stays lit all the way in when he leaps)
+      fl.position = [cam[0] + (eye[0] - cam[0]) * 0.06, cam[1] + 0.3, cam[2] + (eye[2] - cam[2]) * 0.06];
+      fl.intensity = 2.2;
       c.transform();
       a.sting('st_riser', { gain: 0.95, delay: opts.quick ? 0.05 : 0.35 });
       g.fovTarget = 44; g.fovSpeed = 1.4;
       await g.wait(opts.quick ? 0.95 : 1.9);
       if (ses !== g.session) return;
-      fl.intensity = 2.3;
+      fl.intensity = 1.3; // he is about to be a hand's width from the light
       if (g.settings.jumpScare) {
         c.exaggerate = 0.3;
         c.pounceAt(cam, 0.34, { dist: 0.3, lean: 0.2, rise: 0.1 });

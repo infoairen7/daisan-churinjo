@@ -30,12 +30,17 @@ def nframes(shot):
 
 def load_frame(shot, i):
     i = max(0, min(nframes(shot) - 1, i))
-    return np.asarray(Image.open(f'{ROOT}/frames/{shot}/{i:04d}.jpg').convert('RGB'), dtype=np.float32) / 255.0
+    im = Image.open(f'{ROOT}/frames/{shot}/{i:04d}.jpg').convert('RGB')
+    if im.size != (W, H):  # v2 shots are filmed at 1280x720
+        im = im.resize((W, H), Image.LANCZOS).filter(ImageFilter.UnsharpMask(radius=1.6, percent=55, threshold=2))
+    return np.asarray(im, dtype=np.float32) / 255.0
 
 _ui = {}
 def ui_layer(name):
     if name not in _ui:
         im = Image.open(f'{ROOT}/frames/{name}').convert('RGBA')
+        if im.size != (W, H):
+            im = im.resize((W, H), Image.LANCZOS)
         a = np.asarray(im, dtype=np.float32) / 255.0
         _ui[name] = (a[..., :3], a[..., 3:4])
     return _ui[name]
@@ -125,10 +130,10 @@ SAID = os.environ.get('PV_SAID', '1071')
 
 seg('black', 2.0 * FPS, cap=('深夜23時。', '11 P.M.', 'center', 0.3, 1.8))
 seg('shot', 96, shot='exterior', start=20, cap=('10階の自転車を、取りに来ただけだった。', 'I only came back for my bike on the tenth floor.', 'bottom', 0.3, 3.1), bright=1.05)
-seg('shot', 105, shot='ride10', start=45, cap=('誰も呼んでいない階で、止まる。', 'It stops on a floor nobody called.', 'bottom', 1.7, 3.4), bright=1.1)
+seg('shot', 105, shot='ride10', start=45, cap=('誰も呼んでいない階で、止まる。', 'It stops on a floor nobody called.', 'bottom', 1.8, 3.45), bright=1.1)
 seg('shot', 30, shot='ride10', start=208, bright=1.1)
-seg('shot', 80, shot='dup7', start=60, cap=('通路の奥に、自分の自転車が停まっていた。', 'At the end of the aisle stood my own bike.', 'bottom', 0.2, 2.6), bright=1.25)
-seg('shot', 26, shot='scrawl7', start=50, flash=(0, 0.8, 4), bright=1.2)
+seg('shot', 80, shot='dup7', start=35, cap=('通路の奥に、自分の自転車が停まっていた。', 'At the end of the aisle stood my own bike.', 'bottom', 0.2, 2.6), bright=1.25)
+seg('shot', 26, shot='scrawl7', start=30, flash=(0, 0.8, 4), bright=1.2)
 seg('shot', 70, shot='hands4', start=20, cap=('扉を叩く音は、内側からだった。', 'The banging came from the inside.', 'bottom', 0.6, 2.3), bright=1.3)
 seg('black', 1.5 * FPS, cap=('間違えなくても、', 'Even if you get nothing wrong,', 'center', 0.15, 1.5))
 seg('black', 1.6 * FPS, cap=('管理人は、来る。', 'the caretaker comes.', 'center', 0.0, 1.6))
@@ -138,12 +143,12 @@ seg('black', 2.4 * FPS, cap=('……もう、明るくなりましたよ。', '.
 seg('shot', o8 + 12 - max(0, o8 - 26), shot='open8', start=max(0, o8 - 26), bright=1.15, pounce=o8 - max(0, o8 - 26))
 seg('black', 0.5 * FPS)
 seg('shot', 150, shot='ride5_open', start=20, cap=('止まるはずのない階で、乗ってくる。', 'He gets on where the car should never stop.', 'bottom', 2.4, 4.8), bright=1.2)
-seg('shot', 150, shot='ride5_turn', start=10, cap=('……何階ですか', '...Which floor?', 'top', 3.2, 4.95), bright=1.2, uilayer=('ui_choice5.png', 112))
-seg('shot', 100, shot='roll3', start=40, cap=(f'……{SAID}番の方ですね？', f"...You're number {SAID}, aren't you?", 'bottom', 1.1, 3.3), bright=1.15)
+seg('shot', 150, shot='ride5_turn', start=10, cap=('……何階ですか', '...Which floor?', 'top', 2.1, 3.65), bright=1.2, uilayer=('ui_choice5.png', 112))
+seg('shot', 120, shot='roll3', start=0, cap=(f'……{SAID}番の方ですね？', f"...You're number {SAID}, aren't you?", 'bottom', 1.9, 3.9), bright=1.15)
 seg('shot', k5 + 12 - max(0, k5 - 50), shot='kill5', start=max(0, k5 - 50), bright=1.1, pounce=k5 - max(0, k5 - 50))
 seg('black', 1.6 * FPS, cap=('選択を誤れば、そこで終わり。', 'Choose wrong, and that is where it ends.', 'center', 0.25, 1.55))
 seg('title', 5.6 * FPS)
-seg('shot', 100, shot='foot8', start=6, cap=('……誰かが、すぐ横を通っていった。', '...Someone walked right past you.', 'bottom', 0.9, 3.3), bright=1.25)
+seg('shot', 100, shot='foot8', start=0, cap=('……誰かが、すぐ横を通っていった。', '...Someone walked right past you.', 'bottom', 0.9, 3.3), bright=1.25)
 seg('black', 0.6 * FPS)
 
 t = 0
@@ -311,19 +316,19 @@ place(drone(S(7), 41, 0.15, rise=0.04), 0.0)
 for k in range(5):
     place('footstep_left' if k % 2 else 'footstep_right', S(1) + 0.3 + k * 0.58, 0.42, pan=(0.15 if k % 2 else -0.15))
 # 2-3 ride up: motor, the unasked stop, one knock
-place('elevator_motor_loop', S(2), 0.5, dur=1.55, fade_in=0.3, fade_out=0.15, loop=True)
-place('power_cut', S(2) + 1.5, 0.25)
-knock(S(2) + 2.9, 0.8)
-place('st_hit', S(2) + 2.9, 0.35)
+place('elevator_motor_loop', S(2), 0.5, dur=1.75, fade_in=0.3, fade_out=0.15, loop=True)
+place('power_cut', S(2) + 1.7, 0.25)
+knock(S(2) + 3.1, 0.8)
+place('st_hit', S(2) + 3.1, 0.35)
 place('elevator_motor_loop', S(3), 0.5, dur=D(3), fade_in=0.1, fade_out=0.2, loop=True)
 # 4 dup bike: music under, a whisper
 place('bgm_explore1', S(4), 0.5, dur=D(4) + D(5) + D(6), fade_in=0.4, fade_out=0.3)
 place('st_whisper', S(4) + 0.8, 0.5, pan=0.2)
 place('st_stab', S(5), 0.7)
 # 6 handprints: bangs from inside
-for k in range(4):
-    knock(S(6) + 0.75 + k * 0.42, 0.95)
-place('st_hit', S(6) + 0.75, 0.5)
+for tk in (0.15, 0.78, 1.35, 2.05):  # the frames where each print appears (filmed: 25, 44, 61, 82)
+    knock(S(6) + tk, 0.95)
+place('st_hit', S(6) + 0.15, 0.5)
 # 7-8 the line
 place('st_braam', S(7) + 0.05, 0.7, dur=3.0, fade_out=0.8)
 place(drone(D(7) + D(8) + D(9), 36, 0.2), S(7))
@@ -361,8 +366,8 @@ place('st_whisper', S(15) + 3.1, 0.5)
 heartbeat(S(15) + 2.6, 3, 84, 0.42)
 # 16 3F: the doors open on him
 place('elevator_open', S(16), 0.85)
-place('st_hit', S(16) + 0.6, 0.55)
-place('caretaker_presence', S(16) + 0.4, 0.7)
+place('st_hit', S(16) + 0.45, 0.55)
+place('caretaker_presence', S(16) + 0.5, 0.7)
 # 17 the kill
 k5_pounce = S(17) + segs[17]['pounce'] / FPS
 place('st_riser', k5_pounce - 1.9, 1.0)
