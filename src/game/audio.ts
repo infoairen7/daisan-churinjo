@@ -325,6 +325,24 @@ export class AudioManager {
     }
   }
 
+  /** A slow joint creak: a ratchet of tiny dry clicks over `dur` seconds (a neck turning too far). */
+  creak(dur = 2.4, gain = 0.22, pan = 0) {
+    const ctx = this.ctx; if (!ctx || !this.noiseBuf) return;
+    const t0 = ctx.currentTime;
+    let t = 0;
+    while (t < dur) {
+      const k = t / dur;
+      const at = t0 + t;
+      const src = ctx.createBufferSource(); src.buffer = this.noiseBuf;
+      const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 700 + k * 900 + Math.random() * 300; bp.Q.value = 6;
+      const g = ctx.createGain(); const gg = gain * (0.5 + 0.5 * Math.sin(Math.PI * k)) * (0.6 + Math.random() * 0.4);
+      g.gain.setValueAtTime(0.0001, at); g.gain.exponentialRampToValueAtTime(gg, at + 0.002); g.gain.exponentialRampToValueAtTime(0.0001, at + 0.025);
+      src.connect(bp); bp.connect(g); g.connect(this.out(pan, 5000));
+      src.start(at, Math.random() * 1.5); src.stop(at + 0.03);
+      t += 0.018 + Math.random() * (0.05 + 0.08 * Math.abs(Math.sin(k * 9)));
+    }
+  }
+
   /** Low swell that builds and then is cut (reveal). */
   swell(seconds = 2.4, gain = 0.32) {
     const ctx = this.ctx; if (!ctx) return;

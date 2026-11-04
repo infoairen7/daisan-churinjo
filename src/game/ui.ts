@@ -290,7 +290,7 @@ export class GameUI {
         <img class="title-lockup" src="${UI.title_lockup}" alt="${esc(GAME_TITLE())}">
         ${isEn() ? '<p class="title-en">BICYCLE PARKING No.3</p>' : ''}
         <p class="title-sub">${L('深夜23時。10階から自転車を降ろすだけのはずだった。', '11 p.m. All I had to do was bring my bike down from the tenth floor.')}</p>
-        ${opts.demo ? `<p class="demo-tag">${L('v2 デモ版　10階建て・管理人との遭遇', 'v2 DEMO  ·  ten floors, caretaker encounters')}</p>` : ''}
+        <p class="demo-tag">${opts.demo ? L('v2 デモ版　10階建て・管理人との遭遇', 'v2 DEMO  ·  ten floors, caretaker encounters') : L('Ver.2　10階建てになりました', 'Ver.2  ·  now ten floors')}</p>
         <div class="menu">
           <button class="btn primary" data-act="new">${S.newGame}</button>
           ${opts.demo ? `<button class="btn" data-act="demo">${L('デモ：場面を選ぶ', 'Demo: choose a scene')}</button>` : ''}
@@ -571,11 +571,12 @@ export class GameUI {
   }
 
   // ------------------------------------------------------------- endings
-  gameOver(h: { onRetry: Handler; onNew: Handler; onTitle: Handler; onShare: Handler; reached: string; line?: string }) {
+  gameOver(h: { onRetry: Handler; onNew: Handler; onTitle: Handler; onShare: Handler; reached: string; line?: string; hint?: string }) {
     const el = this.open('gameover', `
       <div class="go-wrap">
         <p class="go-line">${esc(h.line || S.failed)}</p>
         <p class="muted small">${esc(h.reached)}</p>
+        ${h.hint ? `<p class="amber small go-hint">${esc(h.hint)}</p>` : ''}
         <div class="menu">
           <button class="btn primary" data-act="retry">${S.retry}</button>
           <button class="btn" data-act="new">${S.newGame}</button>

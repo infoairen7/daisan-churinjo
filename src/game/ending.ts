@@ -76,13 +76,15 @@ export class Caretaker {
     this.lunge(sub(eyeTo, off), dur, { rise: opts.rise ?? 0.06, lean, onDone: opts.onDone });
   }
   get lunging() { return !!this.lungeS; }
-  resetPose() { for (const [n, q] of this.rest) n.quaternion = [...q] as Q; this.armReach = 0; this.twitch = 0; this.exaggerate = 0; this.lungeS = null; this.headBase = null; this.walkS = null; this.turnS = null; this.headTurn = 0; this.headTurnGoal = 0; this.legPhase = 0; this.legAmt = 0; }
+  resetPose() { for (const [n, q] of this.rest) n.quaternion = [...q] as Q; this.armReach = 0; this.twitch = 0; this.exaggerate = 0; this.lungeS = null; this.headBase = null; this.walkS = null; this.turnS = null; this.headTurn = 0; this.headTurnGoal = 0; this.headRoll = 0; this.legPhase = 0; this.legAmt = 0; }
 
   // ---------------------------------------------------------------- v2: walking, turning, the head (procedural; the model has no walk clip)
   /** head yaw (radians, + = toward his left) eased toward headTurnGoal at headTurnSpeed rad/s */
   headTurn = 0;
   headTurnGoal = 0;
   headTurnSpeed = 0.8;
+  /** sideways tilt (radians) that grows as the head passes a natural turn — an owl, not a man */
+  headRoll = 0;
   private walkS: { t: number; dur: number; from: V3; to: V3; onDone?: () => void } | null = null;
   private turnS: { t: number; dur: number; from: Q; to: Q } | null = null;
   private legPhase = 0;
@@ -157,6 +159,7 @@ export class Caretaker {
     if (head) {
       this.headBase = [...head.quaternion] as Q;
       if (this.headTurn !== 0) head.quaternion = quatMul(quatAxisAngle([0, 1, 0], this.headTurn), head.quaternion);
+      if (this.headRoll !== 0 && this.headTurn !== 0) head.quaternion = quatMul(head.quaternion, quatAxisAngle([0, 0, 1], this.headRoll * clamp((Math.abs(this.headTurn) - 1.2) / 1.4, 0, 1)));
       if (this.twitch > 0) {
         const a = 0.09 * this.twitch;
         head.quaternion = quatMul(head.quaternion, quatMul(quatAxisAngle([1, 0, 0], (Math.random() - 0.5) * a), quatAxisAngle([0, 0, 1], (Math.random() - 0.5) * a * 1.4)));

@@ -143,6 +143,7 @@ export class Game {
   /** debug-build camera override for trailer capture (tools/trailer_capture.mjs) */
   dbgCam: { pos: V3; quat: Q; fov?: number } | null = null;
   dbgBudget = 0;
+  dbgSub = 1 / 30; // debug: largest game-time slice per rendered frame while frozen
   private lastFrame = 0;
 
   constructor(root: HTMLElement, canvas: HTMLCanvasElement, renderer: Renderer, templates: Record<string, ModelTemplate>, images: Record<string, HTMLImageElement>, audio: AudioManager) {
@@ -195,7 +196,7 @@ export class Game {
       const raw = Math.max(0, (t - (this.lastFrame || t)) / 1000);
       this.fps = this.fps * 0.9 + (raw > 0 ? 1 / raw : 60) * 0.1;
       let dt = Math.min(this.maxDt, raw);
-      if (this.dbgFreeze) { dt = Math.min(this.dbgBudget, 1 / 30); this.dbgBudget -= dt; }
+      if (this.dbgFreeze) { dt = Math.min(this.dbgBudget, this.dbgSub); this.dbgBudget -= dt; }
       this.adapt(raw);
       this.lastFrame = t;
       this.tick(dt);
@@ -1626,6 +1627,8 @@ export class Game {
       onShare: () => this.share('fail'),
       reached: L(`${f}Ｆで失敗　／　突破 ${TOP - f}／${FLOORS_TO_CLEAR}フロア　／　誤答 ${this.save.wrongTotal}回`, `Failed on ${f}F  /  ${TOP - f} of ${FLOORS_TO_CLEAR} floors cleared  /  ${this.save.wrongTotal} wrong answer${this.save.wrongTotal === 1 ? '' : 's'}`),
       line,
+      // a caretaker scene went wrong: point back at the slip that tells you what to do
+      hint: line ? L('「道具」の「夜間利用の注意」に、管理人に会ったときのことが書いてある。', 'The night-rules slip in your Items says what to do when you meet the caretaker.') : undefined,
     });
     this.ui.bigLine(null);
   }
@@ -1941,6 +1944,7 @@ export class Game {
       answer: () => g.puzzleFor(g.world.floor)?.answer,
       seed: (n: number) => { g.forcedSeed = n; },
       setMaxDt: (v: number) => { g.maxDt = v; },
+      setSub: (v: number) => { g.dbgSub = v; },
       freeze: (on: boolean) => { g.dbgFreeze = on; g.dbgBudget = 0; },
       step: (sec: number) => new Promise<string>((res) => { g.dbgBudget = sec; g.dbgGrab = res; }),
       cam: (pos: V3 | null, yaw = 0, pitch = 0, fov = 0) => { g.dbgCam = pos ? { pos, quat: quatYawPitch(yaw, pitch), fov: fov || undefined } : null; },

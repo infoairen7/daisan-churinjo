@@ -15,58 +15,7 @@
     "E04": 9914,
     "E01": 9970
   },
-  "sampleChecks": [
-    {
-      "floor": 5,
-      "template": "E02",
-      "answer": [
-        5
-      ],
-      "ours": [
-        5
-      ],
-      "ok": true,
-      "clueOk": true
-    },
-    {
-      "floor": 4,
-      "template": "N01",
-      "answer": [
-        1
-      ],
-      "ours": [
-        1
-      ],
-      "ok": true,
-      "clueOk": true
-    },
-    {
-      "floor": 3,
-      "template": "H02",
-      "answer": [
-        1,
-        1
-      ],
-      "ours": [
-        1,
-        1
-      ],
-      "ok": true,
-      "clueOk": true
-    },
-    {
-      "floor": 2,
-      "template": "N03",
-      "answer": [
-        2
-      ],
-      "ours": [
-        2
-      ],
-      "ok": true,
-      "clueOk": true
-    }
-  ],
+  "sampleChecks": [],
   "branch": {
     "incomplete": true,
     "correctNormal": true,

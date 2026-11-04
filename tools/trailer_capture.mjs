@@ -195,6 +195,94 @@ for (const shot of shots) {
     await film('bedroom', 90);
   }
 }
+// ------------------------------------------------------------------ v2 shots
+// fast-forward game time (big slices, few renders) until pred(state) holds
+async function skipUntil(pred, maxSec = 60, slice = 0.2) {
+  await ev((s) => window.__p3.setSub(s), slice);
+  for (let t = 0; t < maxSec; t += slice * 4) { if (await ev(pred)) break; await adv(slice * 4); }
+  await ev(() => window.__p3.setSub(1 / 30));
+}
+const jumpV2 = (f) => ev((f) => { const g = window.__p3.game; window.__p3.cam(null); g.enc.reset(); g.save.cleared = {}; for (const x of [8, 5, 3]) if (x > f) g.save.cleared[String(x)] = true; window.__p3.jump(f); }, f);
+const solveHere = () => ev(() => { const g = window.__p3.game; g.pos = [-0.5, 1.65, 5.9]; g.yaw = Math.PI; g.openPanelFromWorld(); for (const d of window.__p3.answer()) g.panelDigit(d); g.panelOpen(); });
+const pickChoice = (id) => ev((id) => { const b = [...document.querySelectorAll('.btn.choice')]; const i = { first: 0, second: 1, third: 2 }[id]; b[i]?.__act?.(); }, id);
+for (const shot of shots) {
+  if (shot === 'ride10') {
+    // inside the car at 1F; the indicator climbs to 10 (with the stop at 8 and the knock)
+    await ev(() => { const g = window.__p3.game; window.__p3.cam(null); g.world.setFloor(1, null); g.world.setLighting('normal'); g.world.setDoorsInstant(true); g.pos = [0.2, 1.65, 6.3]; g.yaw = 0; g.save.phase = 'INTRO'; });
+    await clean(); await adv(0.2);
+    await ev(() => { window.__p3.game.rideUp(); });
+    await skipUntil(() => window.__p3.game.world.doorState === 'closed', 5, 0.1);
+    await adv(2.2);
+    await film('ride10', 240, async (i) => { const k = i / 239; return { cam: [[0.12, 1.62, lerp(6.4, 6.0, k)], 0.0, 0.11, 50] }; });
+  }
+  if (shot === 'dup7') {
+    // 7F: someone has parked your bike at the end of the aisle
+    await jumpV2(7); await adv(0.6); await clean();
+    await film('dup7', 150, async (i) => { const k = ease(i / 149); return { player: [[lerp(-0.25, 0.0, k), 1.65, lerp(4.6, 1.2, k)], 0.03 - 0.03 * k, -0.04] }; });
+    await ev(() => { const w = window.__p3.game.world; w.dupBike.root.visible = false; w.dupLight.intensity = 0; w.scrawlNode.visible = true; });
+    await clean();
+    const at = [0.1, 1.45, -6.83];
+    await film('scrawl7', 90, async (i) => { const k = ease(i / 89); const p = [0.1, 1.6, lerp(-2.2, -3.6, k)]; return { player: [p, yawTo(p, at), pitchTo(p, at) * 0.4] }; });
+  }
+  if (shot === 'hands4') {
+    // leaving 4F: something bangs on the inside of the doors, palm prints appear
+    await jumpV2(4); await adv(0.6); await clean(true);
+    await solveHere(); await ev(() => window.__p3.game.ui.closeAll());
+    await skipUntil(() => window.__p3.fx().done.has('4-hands'), 20, 0.05);
+    await clean();
+    await film('hands4', 150);
+  }
+  if (shot === 'lights8') {
+    // 8F: standing in the aisle, the lights go out
+    await jumpV2(8); await adv(0.3);
+    await ev(() => { const g = window.__p3.game; g.enc.armedAt = -1; g.pos = [0.2, 1.65, 0.6]; g.yaw = 0; });
+    await clean(); await adv(0.3);
+    await film('lights8', 110, async (i) => {
+      if (i === 40) await ev(() => window.__p3.game.enc.lightsOut());
+      return { player: [[0.2, 1.65, 0.6 - Math.min(i, 40) * 0.008], 0.0, -0.02] };
+    });
+    // eyes closed … then a voice says it's over. Open them.
+    await skipUntil(() => document.querySelector('.ov-choice') !== null, 15, 0.1);
+    await pickChoice('second');
+    await skipUntil(() => (document.querySelector('.ov-choice')?.textContent || '').includes('明るく'), 20, 0.1);
+    await pickChoice('first');
+    await adv(0.05); await clean();
+    await film('open8', 120, null);
+  }
+  if (shot === 'foot8') {
+    // the lights come back; wet footprints pass right beside you
+    await jumpV2(8); await adv(0.3);
+    await ev(() => { const g = window.__p3.game; g.enc.armedAt = -1; g.save.cleared['8'] = true; g.pos = [0.2, 1.65, -0.5]; g.yaw = 0; g.world.layFootprints([0.2, -0.5], 0); });
+    await clean(); await adv(0.3);
+    await film('foot8', 110, async (i) => { const k = ease(i / 109); return { player: [[0.2, 1.65, -0.5], lerp(0.0, 0.45, k), lerp(-0.05, -0.85, k)] }; });
+  }
+  if (shot === 'ride5') {
+    // 5F: the car stops where nobody pressed; the doors open on him; he gets in; the head turns
+    await jumpV2(6); await adv(0.6); await clean(true);
+    await solveHere(); await ev(() => window.__p3.game.ui.closeAll());
+    await skipUntil(() => { const g = window.__p3.game; return g.enc.active === 'ride' && g.world.doorState === 'opening'; }, 40, 0.1);
+    await clean();
+    await film('ride5_open', 190);
+    await skipUntil(() => (window.__p3.game.caretaker?.headTurnGoal || 0) > 1, 20, 0.05);
+    await clean();
+    await film('ride5_turn', 165);
+    await skipUntil(() => document.querySelector('.ov-choice') !== null, 6, 0.05);
+    await clean(true); await snapUi('choice5');
+    // say nothing; the timer runs out and his eyes meet yours
+    await ev(() => { document.querySelector('.ov-choice')?.closest('.overlay')?.style.setProperty('visibility', 'hidden'); });
+    await skipUntil(() => window.__p3.game.ui.isOpen('choice') === false, 12, 0.1);
+    await clean();
+    await film('kill5', 110);
+  }
+  if (shot === 'roll3') {
+    // 3F: the doors open and he is standing right there, checking your number
+    await jumpV2(4); await adv(0.6); await clean(true);
+    await solveHere(); await ev(() => window.__p3.game.ui.closeAll());
+    await skipUntil(() => { const g = window.__p3.game; return g.enc.active === 'rollcall' && g.world.doorState === 'opening'; }, 60, 0.1);
+    await clean();
+    await film('roll3', 170);
+  }
+}
 writeFileSync(`${out}/done_${shots.join('_')}.txt`, 'ok');
 await h.browser.close();
 console.log('done');

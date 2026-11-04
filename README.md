@@ -1,6 +1,6 @@
 # 第３駐輪場 / Bicycle Parking No.3
 
-深夜23時。5階に停めた自転車を取りに来ただけだった。停電で閉じ込められたエレベーターを動かすには、各階の駐輪車を数えて「照合票」に答えるしかない。2回続けて間違えると、管理人が来る。ブラウザで遊べる、完全一人称の短編ホラー謎解きです。インストール不要、日本語 / English。
+深夜23時。10階に停めた自転車を取りに来ただけだった。停電で閉じ込められたエレベーターを動かすには、各階の駐輪車を数えて「照合票」に答えるしかない。2回続けて間違えると、管理人が来る。そして Ver.2 からは、間違えなくても管理人は来る。ブラウザで遊べる、完全一人称の短編ホラー謎解きです。インストール不要、日本語 / English。
 
 **▶ 遊ぶ：https://infoairen7.github.io/daisan-churinjo/**
 （English: https://infoairen7.github.io/daisan-churinjo/?lang=en ）
@@ -11,9 +11,11 @@
 
 ## 特徴
 
-- **毎回変わる謎**：5F〜2Fの4フロアで、駐輪車の配置と照合票（12種類の出題）が周回ごとに作られます。条件に合う自転車を調べて数え、台数を左から入力。答えの各桁は必ず1〜5です。
+- **10階建て（Ver.2）**：10Fから1Fまで降りる一夜。照合のある6フロア（10・9・7・6・4・2F）と、管理人と遭遇する3フロア（8・5・3F）があります。
+- **毎回変わる謎**：照合のある階では、駐輪車の配置と照合票（12種類の出題）が周回ごとに作られます。条件に合う自転車を調べて数え、台数を左から入力。答えの各桁は必ず1〜5です。
+- **管理人との遭遇（Ver.2）**：8F「消灯」、5F「同乗」、3F「点呼」。誤答がなくても必ず起き、制限時間つきの選択を誤るとゲームオーバーです。手がかりは、精算のときに出てくる「夜間利用の注意」。
 - **3つの結末**：誤答0回のシークレットエンド、帰宅エンド、そして管理人と目が合うゲームオーバー（同じ階から再開できます）。
-- **怖さの作り**：下の階ほど暗く弱っていく照明、コンクリートに響く足音とノック、階ごとに一度だけ起きる異変、場面で変わるBGM、画面の向こうから飛びかかってくる管理人。
+- **怖さの作り**：下の階ほど暗く弱っていく照明、コンクリートに響く足音とノック、階ごとに一度だけ起きる異変（通路の奥に停まっている「自分の自転車」、扉の内側に増えていく手形など）、場面で変わるBGM、画面の向こうから飛びかかってくる管理人。
 - **Xでポスト**：ゲームオーバーやクリアの画面から、どのフロアまで進んだか・誤答の回数・クリア記録をXに投稿できます。
 - **日本語 / English**：ブラウザの言語で自動で切り替わり、タイトル画面と設定からも変えられます。
 - PCはキーボード、スマホは十字キーとダブルタップ（横画面推奨）。外部ライブラリを使わない自前の WebGL2 エンジンで動いています。
@@ -28,7 +30,8 @@
 | 見回す（任意） | マウスでドラッグ | 画面をドラッグ |
 | 調べる・選ぶ | Space | 同じ対象をダブルタップ |
 | 道具 | I | 「道具」ボタン |
-| 照合盤の数字 | 1〜5、Backspace で「閉」 | 各ボタンをダブルタップ |
+| 照合盤の数字 | 1〜5、Backspace で「閉」（1Fの行先「10」は 0） | 各ボタンをダブルタップ |
+| 遭遇場面の選択 | 1〜3、または W／S と Space | 選択肢をダブルタップ |
 | 一時停止・閉じる | Esc | 右上の一時停止 |
 
 ## フォルダ
@@ -64,7 +67,9 @@ Playwright（Chromium）が必要です。テスト用のフックを入れた�
 ```
 npm run build:debug
 npm run serve &
-node tools/playtest.mjs out/playtest            # 全分岐の通しプレイ
+node tools/playtest.mjs out/playtest            # 全分岐の通しプレイ（v1 の経路）
+node tools/playtest_v2.mjs out/v2 full          # 10F→1F、全照合と全遭遇に正解してシークレットエンド
+node tools/playtest_v2.mjs out/v2f fails        # 遭遇ごとの誤答・時間切れ → この階から再開
 node tools/playtest_endings.mjs out/endings     # 2つのエンディング
 node tools/run_ts.mjs tools/validate_puzzles.ts # 謎の生成を4万回検証
 ```
@@ -81,11 +86,12 @@ node tools/run_ts.mjs tools/validate_puzzles.ts # 謎の生成を4万回検証
 
 **Bicycle Parking No.3** is a short first-person puzzle horror game that runs in your browser.
 
-It's 11 p.m. and you only came back for your bike on the fifth floor. A power cut traps you in the elevator, and the only way down is to count the parked bicycles on each floor and answer the checklist. Get it wrong twice in a row and the caretaker comes.
+It's 11 p.m. and you only came back for your bike on the tenth floor. A power cut traps you in the elevator, and the only way down is to count the parked bicycles on each floor and answer the checklist. Get it wrong twice in a row and the caretaker comes. Since Ver.2, he comes even when you get nothing wrong.
 
 **Play: https://infoairen7.github.io/daisan-churinjo/?lang=en**
 
-- A new layout and new checklists (12 kinds) on every run, across four floors. Every answer digit is 1–5.
+- Ver.2: ten floors. Six floors with a checklist (10, 9, 7, 6, 4, 2F) and three where you meet the caretaker (8F lights out, 5F he gets in the elevator, 3F roll call). Each meeting ends in a timed choice; choose wrong and it's game over. The night-rules slip you get with your receipt tells you what to do.
+- A new layout and new checklists (12 kinds) on every run. Every answer digit is 1–5.
 - Three outcomes: a secret ending for a run with no wrong answers, the "Home" ending, and a game over you can retry from the same floor.
 - Contains sudden loud sounds, flashes and jump scares. You can tone them down in Settings.
 - Post how far you got to X from the game over and ending screens.

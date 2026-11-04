@@ -39,6 +39,7 @@ export class Encounters {
   /** Abandon whatever is running (title, retry, new night). */
   reset() {
     this.active = null; this.armedAt = -1; this.queue = [];
+    this.g.world.faceLight.intensity = 0;
     if (this.choiceH) { this.choiceH.close(); this.choiceH = null; }
     this.choiceEnd = null;
     this.g.ui.say(null);
@@ -134,11 +135,16 @@ export class Encounters {
       if (ses !== g.session) return;
       const eye = c.eyeWorld();
       g.camTo(cam, quatLookDir(sub(eye, cam)), opts.quick ? 5 : 2);
+      // a cold light from just above your eyes, so the face is what you see (not a silhouette against the car lamp)
+      const fl = g.world.faceLight;
+      fl.position = [cam[0] + (eye[0] - cam[0]) * 0.3, eye[1] + 0.45, cam[2] + (eye[2] - cam[2]) * 0.3];
+      fl.intensity = 1.5;
       c.transform();
       a.sting('st_riser', { gain: 0.95, delay: opts.quick ? 0.05 : 0.35 });
       g.fovTarget = 44; g.fovSpeed = 1.4;
       await g.wait(opts.quick ? 0.95 : 1.9);
       if (ses !== g.session) return;
+      fl.intensity = 2.3;
       if (g.settings.jumpScare) {
         c.exaggerate = 0.3;
         c.pounceAt(cam, 0.34, { dist: 0.3, lean: 0.2, rise: 0.1 });
@@ -155,6 +161,7 @@ export class Encounters {
     }
     g.ui.say(null);
     g.ui.fadeInstant(1);
+    g.world.faceLight.intensity = 0;
     a.setDuck(0, 0.02);
     await g.wait(1.0);
     if (ses !== g.session) return;
@@ -301,12 +308,42 @@ export class Encounters {
     if (ses !== g.session) return;
     a.sting('st_whisper', { gain: 0.5 });
     a.breath(0.1, 2.0, 0.1, 340);
-    await g.wait(2.6);
+    await g.wait(1.9);
+    if (ses !== g.session) return;
+    // a kind voice says it is over. The footsteps never walked away.
+    a.setDuck(0.5, 0.8);
+    const voice = L('……もう、明るくなりましたよ。目を開けてください。', '...The lights are back on now. You can open your eyes.');
+    g.ui.say(voice, 0, L('声', 'A voice'));
+    await g.wait(1.9);
+    if (ses !== g.session) return;
+    const pick = await this.choose(voice, [
+      { id: 'open', label: L('目を開ける', 'Open your eyes') },
+      { id: 'wait', label: L('目を閉じたまま、足音を待つ', 'Keep them closed and wait for the footsteps') },
+    ], 6, L('声', 'A voice'));
+    if (ses !== g.session) return;
+    a.setDuck(1, 1.2);
+    if (pick === 'open') {
+      const c = await this.caretaker();
+      if (ses !== g.session) return;
+      this.standBefore(c, 0.62);
+      w.setLighting('emergency');
+      w.mood = { ...w.mood, ambient: 0.3 };
+      g.ui.say(null);
+      g.ui.fadeInstant(0);
+      await this.kill(c, L('足音は、まだ遠ざかっていなかった。', 'The footsteps had not walked away.'), { quick: true });
+      return;
+    }
+    // (waiting, or simply not moving, is right) — a long silence, then he walks on
+    g.ui.say(L('（目を閉じたまま）', '(Your eyes stay closed.)'), 0);
+    await g.wait(1.7);
+    if (ses !== g.session) return;
+    a.breath(0.08, 1.6, 0.2, 330);
+    await g.wait(1.2);
     if (ses !== g.session) return;
     // and walk on, past you
     g.ui.caption(L('［足音が遠ざかる］', '[Footsteps walk away]'), 2600);
-    this.steps([g.pos[0] - 0.5, 0, g.pos[2]], at(9), 9, 0.66, 0.9, 0.82);
-    await g.wait(6.4);
+    this.steps([g.pos[0] - 0.5, 0, g.pos[2]], at(9), 8, 0.62, 0.9, 0.82);
+    await g.wait(5.2);
     if (ses !== g.session) return;
     g.ui.say(null);
     // power back; open your eyes
@@ -388,9 +425,9 @@ export class Encounters {
     a.setDrone(0.08, 4);
     await g.wait(2.2);
     if (ses !== g.session) return;
-    // the head turns — further than a head should
-    if (c) { c.headTurnSpeed = 0.75; c.headTurnGoal = 2.35; a.clank(0.08, 0, 700); }
-    await g.wait(1.6);
+    // the head turns — past where a head stops — until the face is looking straight back at you over his own back
+    if (c) { c.headTurnSpeed = 0.82; c.headTurnGoal = 3.05; c.headRoll = 0.24; a.clank(0.08, 0, 700); a.creak(3.6, 0.2, -0.1); }
+    await g.wait(2.6);
     if (ses !== g.session) return;
     g.ui.say(L('……何階ですか', '...Which floor?'), 0, L('管理人', 'Caretaker'));
     // your eyes are drawn to his face while you hesitate
@@ -540,10 +577,10 @@ export class Encounters {
       return;
     }
     if (pick === 'no') {
-      g.ui.say(L('……いいえ？', '...No?'), 1600, who);
-      await g.wait(1.3);
+      g.ui.say(L('……いいえ？　では、あなたは誰ですか。', '...No? Then who are you?'), 2200, who);
+      await g.wait(2.0);
       if (ses !== g.session) return;
-      await this.kill(c, L('番号を、偽った。', 'You gave the wrong number.'), { cam: CAR_POS });
+      await this.kill(c, L('自分の番号を、否定した。', 'You denied your own number.'), { cam: CAR_POS });
       return;
     }
     g.ui.say(L('……番号を。', '...Your number.'), 1600, who);

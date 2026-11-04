@@ -66,16 +66,24 @@ async function compose(bg, file, w, hh, opts = {}) {
     .t{position:absolute;left:${w * 0.055}px;top:50%;transform:translateY(-50%);width:${w * 0.5}px}
     .t svg{width:100%;height:auto;display:block;margin-left:-${w * 0.012}px}
     .en{color:#E9B96E;letter-spacing:.34em;font-weight:700;font-size:${w * 0.0185}px;margin:${w * 0.004}px 0 ${w * 0.024}px}
+    .badge{display:inline-block;color:#F0EBDD;border:${Math.max(1, w * 0.0016)}px solid rgba(233,185,110,.8);font-weight:700;letter-spacing:.24em;font-size:${w * 0.0175}px;padding:${w * 0.003}px ${w * 0.012}px;margin:0 0 ${w * 0.016}px}
     .ja{color:#F0EBDD;font-size:${w * 0.024}px;font-weight:500;line-height:1.55;margin:0}
     .sub{color:#B9B1A5;font-size:${w * 0.0155}px;margin:${w * 0.016}px 0 0;letter-spacing:.04em}
   </style></head><body><div class="bg"></div><div class="shade"></div><div class="vig"></div>
   <div class="t">${lockup}<div class="en">BICYCLE PARKING No.3</div>
-  <p class="ja">深夜23時、自転車を取りに来ただけだった。<br>2回まちがえると、管理人が来る。</p>
+  ${opts.badge ? `<div class="badge">${opts.badge}</div>` : ''}
+  <p class="ja">${opts.lines ?? '深夜23時、自転車を取りに来ただけだった。<br>2回まちがえると、管理人が来る。'}</p>
   <p class="sub">ブラウザで遊べる一人称ホラー謎解き　/　日本語・English</p></div></body></html>`;
   await k.page.setContent(html);
   await k.page.waitForTimeout(400);
   await k.page.screenshot({ path: file, type: 'jpeg', quality: 88 });
   await k.browser.close();
+}
+if (want('compose2')) {
+  // Ver.2: same frame, the new line
+  const v2 = { shift: 1200 * 0.27, bright: 1.05, badge: 'Ver.2　10階建て', lines: '深夜23時、自転車を取りに来ただけだった。<br>間違えなくても、管理人は来る。' };
+  await compose(`${out}/raw_face.png`, `${out}/ogp.jpg`, 1200, 630, v2);
+  await compose(`${out}/raw_face.png`, `${out}/thumb_1280x720.jpg`, 1280, 720, { ...v2, shift: 1280 * 0.27 });
 }
 if (want('compose')) {
   // main: the caretaker on the right; alt: the lit elevator (no face)

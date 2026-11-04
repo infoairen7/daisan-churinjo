@@ -347,6 +347,8 @@ export class World {
   setHandprints(on: boolean) { for (const h of this.handprints) h.visible = on; }
   /** a dim cold light over the other bicycle, only while it is there */
   dupLight = { position: [0.35, 1.7, -4.9] as V3, color: [0.75, 0.82, 0.9] as V3, intensity: 0, range: 4.5, enabled: true };
+  /** v2: a cold key light on the caretaker's face when he turns on you (set by the encounter scenes, off otherwise) */
+  faceLight = { position: [0, 1.7, 0] as V3, color: [0.82, 0.88, 1.0] as V3, intensity: 0, range: 2.8, enabled: true };
 
   private buildRacks() {
     const items = new Map<Material, { geometry: Geometry; matrix: M4 }[]>();
@@ -462,7 +464,7 @@ export class World {
       { position: [0, 2.6, -9.6], color: amber, intensity: 2.2, range: 7, enabled: true },
       { position: [0, 2.6, -14.4], color: amber, intensity: 2.2, range: 7, enabled: true },
     ];
-    this.scene.points.push(this.evLight, this.evOutLight, this.termLight, this.accentLight, this.outsideFill, ...this.laneLights, this.dupLight);
+    this.scene.points.push(this.evLight, this.evOutLight, this.termLight, this.accentLight, this.outsideFill, ...this.laneLights, this.dupLight, this.faceLight);
     // ceiling strips get their own emissive material + halo so a single lamp can fail
     const glowTex = C.texFromCanvas(C.glowSprite('220,228,235'));
     const lampSrc = this.t.floor_shell.materials.find((m) => m.name === 'neutral_lamp')!;
@@ -496,6 +498,7 @@ export class World {
   // ------------------------------------------------------------------ floor content
   setFloor(floor: number, puzzle: FloorPuzzle | null) {
     this.floor = floor;
+    this.faceLight.intensity = 0;
     for (const g of this.floorGeoms) this.renderer.disposeGeometry(g);
     this.floorGeoms = [];
     this.floorContent.clear();

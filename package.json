@@ -1,6 +1,6 @@
 {
   "name": "daisan-churinjo",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "private": true,
   "description": "第３駐輪場 / Bicycle Parking No.3 — a first-person puzzle horror game for the browser",
   "type": "module",

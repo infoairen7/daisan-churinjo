@@ -91,6 +91,13 @@ async function lights8(pick) {
   await choose(pick);
 }
 
+/** the voice in the dark asks you to open your eyes: keep them closed */
+async function keepClosed(pick = '閉じたまま') {
+  await h.waitFor((s) => s.encounter === 'lights' && s.choice, 60000, 'voice choice');
+  log('8F voice', await h.page.evaluate(() => document.querySelector('.ov-choice')?.textContent.replace(/\s+/g, ' ').slice(0, 80)));
+  await choose(pick);
+}
+
 async function ride5(pick) {
   await h.waitFor((s) => s.encounter === 'ride', 90000, 'ride');
   await h.waitFor((s) => s.doors === 'open', 30000, 'ride doors');
@@ -151,6 +158,7 @@ try {
     await solve(9);
     await lights8('目を閉じる');
     await h.sleep(2500); await h.shot('13_8F_eyes_closed');
+    await keepClosed();
     await h.waitFor((s) => s.mode === 'world' && s.floor === 8, 60000, 'lights back');
     await h.sleep(800); await h.face(0.2, -0.5, 0.2, 3.0); await h.sleep(600); await h.shot('14_8F_footprints');
     log('8F cleared', (await h.st()).cleared);
@@ -186,8 +194,18 @@ try {
     await gameOver('51_8F');
     await h.waitFor((s) => s.floor === 8 && s.mode === 'world', 15000, 'retry 8F');
     await lights8('目を閉じる');
+    // the voice: open your eyes → game over
+    await keepClosed('目を開ける');
+    await gameOver('51b_8F_open');
+    log('gameover hint', await h.page.evaluate(() => document.querySelector('.go-hint')?.textContent || ''));
+    await h.waitFor((s) => s.floor === 8 && s.mode === 'world', 15000, 'retry 8F b');
+    await lights8('目を閉じる');
+    await slow(false);
+    // the voice again: do nothing — the timer running out is keeping them closed
+    await h.waitFor((s) => s.encounter === 'lights' && s.choice, 60000, 'voice choice 2');
     await h.waitFor((s) => s.mode === 'world' && s.cleared && s.cleared['8'], 60000, '8F cleared after retry');
-    log('8F retry ok', true);
+    await slow(true);
+    log('8F retry ok (timeout on the voice = survive)', true);
     // 8F: run / timeout
     await jump(8); await lights8('走る');
     await gameOver('52_8F_run');
@@ -224,7 +242,7 @@ try {
   if (part === 'scenes') {
     await h.key('Space');
     await h.waitFor((s) => s.mode === 'world' && s.phase === 'INTRO', 40000, 'intro world');
-    await jump(8); await lights8('目を閉じる');
+    await jump(8); await lights8('目を閉じる'); await keepClosed();
     await h.waitFor((s) => s.mode === 'world' && s.cleared && s.cleared['8'], 60000, '8F cleared');
     await h.sleep(600); await h.face(0.2, -0.5, 0.2, 3.0); await h.sleep(600); await h.shot('14_8F_footprints');
     await jump(5); await ride5('うつむいて');
